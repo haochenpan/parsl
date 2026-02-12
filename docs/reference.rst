@@ -28,6 +28,7 @@ Configuration
     parsl.config.Config
     parsl.set_stream_logger
     parsl.set_file_logger
+    parsl.set_diaspora_logger
     parsl.addresses.address_by_hostname
     parsl.addresses.address_by_interface
     parsl.addresses.address_by_query

@@ -7,7 +7,7 @@ when working in a Jupyter notebook.
 """
 import io
 import logging
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import typeguard
 
@@ -95,5 +95,137 @@ def set_file_logger(filename: str,
     def unregister_callback():
         logger.removeHandler(handler)
         futures_logger.removeHandler(handler)
+
+    return unregister_callback
+
+
+class DiasporaHandler(logging.Handler):
+    """Logging handler that emits records into a Diaspora-backed Kafka topic."""
+
+    def __init__(self,
+                 producer: Any,
+                 kafka_topic: str,
+                 send_timeout: int) -> None:
+        super().__init__()
+        self.producer = producer
+        self.kafka_topic = kafka_topic
+        self.send_timeout = send_timeout
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+
+        if isinstance(value, bytes):
+            return value.decode(errors="replace")
+        if isinstance(value, dict):
+            return {str(k): DiasporaHandler._json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [DiasporaHandler._json_safe(v) for v in value]
+        return repr(value)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            # Serialize the full LogRecord payload (including any extra fields)
+            # so downstream consumers can choose their own projection.
+            event = {k: self._json_safe(v) for k, v in record.__dict__.items()}
+            event["message"] = record.getMessage()
+            if self.formatter is not None:
+                event["formatted"] = self.format(record)
+            self.producer.send(self.kafka_topic, event)
+        except Exception:
+            self.handleError(record)
+
+    def close(self) -> None:
+        if hasattr(self.producer, "flush"):
+            try:
+                self.producer.flush(timeout=self.send_timeout)
+            except TypeError:
+                self.producer.flush()
+            except Exception:
+                # Logging close should be best-effort and not break caller shutdown.
+                pass
+
+        super().close()
+
+
+@typeguard.typechecked
+def set_diaspora_logger(topic_name: str = "topic-parsl-logs",
+                        name: str = 'parsl',
+                        level: int = logging.INFO,
+                        format_string: Optional[str] = None,
+                        environment: Optional[str] = None,
+                        send_timeout: int = 30,
+                        producer: Optional[Any] = None) -> Callable[[], None]:
+    """Add a Diaspora event-fabric logger.
+
+    Args:
+        - topic_name (string): Kafka topic name. Can be either short topic name
+          (without namespace) or a fully-qualified ``namespace.topic``.
+        - name (string): Logger name to attach the handler to.
+        - level (logging.LEVEL): Set the logging level. Defaults to INFO.
+        - format_string (string): Optional custom formatted output added as
+          event field ``formatted``.
+        - environment (string): Optional Diaspora SDK environment.
+        - send_timeout (int): Ack timeout in seconds while waiting for queued sends on close.
+        - producer (object): Optional custom producer with a ``send`` method.
+          Primarily for tests; when omitted, a Diaspora KafkaProducer is created.
+
+    Returns:
+        - a callable which, when invoked, will reverse the log handler
+          attachments made by this call.
+    """
+    owns_producer = producer is None
+    if producer is None:
+        try:
+            from diaspora_event_sdk import Client as GlobusClient
+            from diaspora_event_sdk.sdk.kafka_client import KafkaProducer
+        except ImportError as e:
+            raise RuntimeError(
+                "diaspora-event-sdk with kafka-python support is required. "
+                "Install with: pip install -e '.[diaspora]'. "
+                "Then run: python examples/diaspora/diaspora_setup.py"
+            ) from e
+
+        try:
+            client = GlobusClient(environment=environment)
+            client.create_key()
+            create_topic_name = topic_name.split(".", 1)[1] if "." in topic_name else topic_name
+            topic_result = client.create_topic(create_topic_name)
+            if isinstance(topic_result, dict):
+                status = topic_result.get("status")
+                if status not in {"success", "no-op", None}:
+                    raise RuntimeError(f"create_topic failed with status={status!r}")
+
+            kafka_topic = topic_name if "." in topic_name else f"{client.namespace}.{topic_name}"
+            producer = KafkaProducer(kafka_topic)
+        except Exception as e:
+            raise RuntimeError(
+                "Failed to initialize Diaspora logging producer. "
+                "Run: python examples/diaspora/diaspora_setup.py"
+            ) from e
+    else:
+        kafka_topic = topic_name
+
+    if format_string is None:
+        format_string = DEFAULT_FORMAT
+
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    handler = DiasporaHandler(producer, kafka_topic, send_timeout)
+    handler.setLevel(level)
+    formatter = logging.Formatter(format_string, datefmt='%Y-%m-%d %H:%M:%S')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    futures_logger = logging.getLogger("concurrent.futures")
+    futures_logger.addHandler(handler)
+
+    def unregister_callback():
+        logger.removeHandler(handler)
+        futures_logger.removeHandler(handler)
+        handler.close()
+        if owns_producer and hasattr(producer, "close"):
+            producer.close()
 
     return unregister_callback

@@ -27,7 +27,7 @@ from parsl.executors import (
     ThreadPoolExecutor,
     WorkQueueExecutor,
 )
-from parsl.log_utils import set_file_logger, set_stream_logger
+from parsl.log_utils import set_diaspora_logger, set_file_logger, set_stream_logger
 from parsl.monitoring import MonitoringHub
 from parsl.version import VERSION
 
@@ -51,6 +51,7 @@ __all__ = [
     # logging
     'set_stream_logger',
     'set_file_logger',
+    'set_diaspora_logger',
     'AUTO_LOGNAME',
 
     # executors
