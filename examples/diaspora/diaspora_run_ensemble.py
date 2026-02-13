@@ -2,7 +2,7 @@
 """Parsl ensemble workflow with post-processing analysis and Diaspora logging.
 
 Install dependencies from this checkout with:
-    pip install -e ".[diaspora]"
+    pip install -e ".[diaspora,monitoring]"
 
 Run one-time user setup first:
     python examples/diaspora/diaspora_setup.py
@@ -35,6 +35,7 @@ ENSEMBLE_STEPS = 30
 STEP_SLEEP_SECONDS = 0.25
 LOCAL_HEARTBEAT_SECONDS = 0.5
 AURORA_HEARTBEAT_SECONDS = 10.0
+
 
 def main(default_mode: str = "local") -> None:
     args = parse_run_args(
@@ -105,17 +106,19 @@ def main(default_mode: str = "local") -> None:
             logger.info("Parsl loaded. run_id=%s", getattr(dfk, "run_id", "<unknown>"))
 
             @python_app
-            def simulate_member(member_id: int, steps: int, step_sleep_s: float) -> dict:
+            def simulate_member(
+                member_id: int,
+                steps: int,
+                step_sleep_s: float,
+            ) -> dict:
                 import random
                 import statistics
                 import time as _time
 
-                logger.info(
-                    "[python_app] member %d starting with steps=%d step_sleep_s=%.2f",
-                    member_id,
-                    steps,
-                    step_sleep_s,
-                )
+                worker_logs = []
+                start_msg = f"[python_app] member {member_id} starting with steps={steps} step_sleep_s={step_sleep_s:.2f}"
+                worker_logs.append(start_msg)
+                logger.info(start_msg)
                 rng = random.Random(4100 + member_id)
                 values = []
                 start = _time.time()
@@ -124,19 +127,14 @@ def main(default_mode: str = "local") -> None:
                     current += rng.gauss(0.0, 1.2)
                     values.append(current)
                     if step in {0, steps // 2, steps - 1}:
-                        logger.info(
-                            "[python_app] member %d progress step=%d value=%.3f",
-                            member_id,
-                            step,
-                            current,
-                        )
+                        progress_msg = f"[python_app] member {member_id} progress step={step} value={current:.3f}"
+                        worker_logs.append(progress_msg)
+                        logger.info(progress_msg)
                     _time.sleep(step_sleep_s + rng.random() * 0.05)
                 end = _time.time()
-                logger.info(
-                    "[python_app] member %d finished in %.2fs",
-                    member_id,
-                    end - start,
-                )
+                finish_msg = f"[python_app] member {member_id} finished in {end - start:.2f}s"
+                worker_logs.append(finish_msg)
+                logger.info(finish_msg)
 
                 return {
                     "member_id": member_id,
@@ -147,6 +145,7 @@ def main(default_mode: str = "local") -> None:
                     "min": min(values),
                     "max": max(values),
                     "last3": values[-3:],
+                    "worker_logs": worker_logs,
                 }
 
             @python_app
@@ -195,6 +194,11 @@ def main(default_mode: str = "local") -> None:
                     member_id = pending.pop(future)
                     result = future.result()
                     member_results[member_id] = result
+                    if is_aurora:
+                        # Worker logs are collected in result payload and re-emitted
+                        # from submit side so they go through Diaspora logger.
+                        for worker_log in result.get("worker_logs", []):
+                            logger.info("%s", worker_log)
                     logger.info(
                         "Member %d complete: mean=%.3f stdev=%.3f range=[%.3f, %.3f] duration=%.2fs last3=%s",
                         member_id,

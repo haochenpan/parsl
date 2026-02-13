@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from parsl.config import Config
 
 LOCAL_MODE = "local"
 AURORA_MODE = "aurora"
@@ -16,6 +22,7 @@ AURORA_TOPIC = "topic-parsl-aurora-debug"
 AURORA_LOG_FILE = "parsl-aurora-debug.log"
 
 AURORA_ACCOUNT = "Diaspora"
+MONITORING_INTERVAL_SECONDS = 10
 
 
 def resolve_aurora_queue(count: int) -> str:
@@ -61,12 +68,23 @@ def parse_run_args(
     return parser.parse_args()
 
 
+def make_monitoring_config():
+    from parsl.monitoring import MonitoringHub
+
+    return MonitoringHub(
+        monitoring_debug=True,
+        resource_monitoring_enabled=True,
+        resource_monitoring_interval=MONITORING_INTERVAL_SECONDS,
+    )
+
+
 def make_local_config() -> Config:
     from parsl.config import Config
     from parsl.executors import ThreadPoolExecutor
 
     return Config(
         executors=[ThreadPoolExecutor(label="local_threads", max_threads=2)],
+        monitoring=make_monitoring_config(),
         initialize_logging=False,
     )
 
@@ -79,7 +97,19 @@ def make_aurora_config(count: int) -> tuple[Config, str, str]:
     from parsl.providers import PBSProProvider
 
     account, queue = resolve_aurora_profile(count)
-    venv = os.environ.get("VIRTUAL_ENV")
+    python_bin = Path(sys.executable).parent
+    env_venv = os.environ.get("VIRTUAL_ENV")
+    candidate_bins = [python_bin]
+    if env_venv:
+        candidate_bins.insert(0, Path(env_venv) / "bin")
+
+    htex_script_bin = python_bin
+    for bin_dir in candidate_bins:
+        if (bin_dir / "interchange.py").exists() and (bin_dir / "process_worker_pool.py").exists():
+            htex_script_bin = bin_dir
+            break
+
+    venv = env_venv or str(htex_script_bin.parent)
     worker_init_parts = [
         "export TMPDIR=/tmp",
         "export TEMP=/tmp",
@@ -88,16 +118,41 @@ def make_aurora_config(count: int) -> tuple[Config, str, str]:
     if venv:
         worker_init_parts.append(f"source {venv}/bin/activate")
     worker_init = "; ".join(worker_init_parts)
+    launch_cmd = (
+        f"{htex_script_bin}/process_worker_pool.py "
+        "{debug} {max_workers_per_node} "
+        "-a {addresses} "
+        "-p {prefetch_capacity} "
+        "-c {cores_per_worker} "
+        "-m {mem_per_worker} "
+        "--poll {poll_period} "
+        "--port={worker_port} "
+        "--cert_dir {cert_dir} "
+        "--logdir={logdir} "
+        "--block_id={{block_id}} "
+        "--hb_period={heartbeat_period} "
+        "{address_probe_timeout_string} "
+        "--hb_threshold={heartbeat_threshold} "
+        "--drain_period={drain_period} "
+        "--cpu-affinity {cpu_affinity} "
+        "{enable_mpi_mode} "
+        "--mpi-launcher={mpi_launcher} "
+        "--available-accelerators {accelerators}"
+    )
+    interchange_launch_cmd = [f"{htex_script_bin}/interchange.py"]
 
     config = Config(
         executors=[
             HighThroughputExecutor(
                 label="aurora_htex",
                 address=address_by_hostname(),
+                launch_cmd=launch_cmd,
+                interchange_launch_cmd=interchange_launch_cmd,
+                worker_debug=True,
                 provider=PBSProProvider(
                     account=account,
                     queue=queue,
-                    walltime="00:05:00",
+                    walltime="00:15:00",
                     worker_init=worker_init,
                     scheduler_options="#PBS -l filesystems=home:flare",
                     launcher=MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
@@ -110,6 +165,7 @@ def make_aurora_config(count: int) -> tuple[Config, str, str]:
                 ),
             )
         ],
+        monitoring=make_monitoring_config(),
         initialize_logging=False,
     )
     return config, account, queue
