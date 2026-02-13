@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
+import logging
 import os
 
 LOCAL_MODE = "local"
 AURORA_MODE = "aurora"
+DIASPORA_DEMO_FORMAT = "DIASPORA|%(levelname)s|%(name)s|%(funcName)s:%(lineno)d|%(message)s"
 
 LOCAL_TOPIC = "topic-parsl-local"
 LOCAL_LOG_FILE = "parsl-local.log"
@@ -29,6 +32,33 @@ def defaults_for_mode(mode: str) -> tuple[str, str]:
     if mode == AURORA_MODE:
         return AURORA_TOPIC, AURORA_LOG_FILE
     raise ValueError(f"Unsupported mode: {mode}")
+
+
+def parse_run_args(
+    description: str,
+    count_help: str,
+    default_mode: str = LOCAL_MODE,
+) -> argparse.Namespace:
+    # Local import avoids module cycle: util imports defaults_for_mode from this module.
+    from util import parse_log_level
+
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--mode",
+        choices=[LOCAL_MODE, AURORA_MODE],
+        default=default_mode,
+        help="Execution mode: local thread pool or Aurora PBS.",
+    )
+    parser.add_argument("--topic", default=None, help="Diaspora topic name (without namespace).")
+    parser.add_argument("--count", type=int, default=3, help=count_help)
+    parser.add_argument("--log-file", default=None, help="Local file logger output path.")
+    parser.add_argument(
+        "--log-level",
+        type=parse_log_level,
+        default=logging.INFO,
+        help="Logging level for stream/file/Diaspora handlers (for example: DEBUG, INFO, WARNING).",
+    )
+    return parser.parse_args()
 
 
 def make_local_config() -> Config:
@@ -72,7 +102,7 @@ def make_aurora_config(count: int) -> tuple[Config, str, str]:
                     scheduler_options="#PBS -l filesystems=home:flare",
                     launcher=MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
                     select_options="",
-                    nodes_per_block=1,
+                    nodes_per_block=2 if queue == "debug-scaling" else 1,
                     cpus_per_node=64,
                     init_blocks=1,
                     min_blocks=1,
