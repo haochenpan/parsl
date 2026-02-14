@@ -33,6 +33,18 @@ class LoggedRunContext:
     log_level: int
 
 
+def _log_common_workflow_start(context: LoggedRunContext, logger: logging.Logger) -> None:
+    logger.info("If this is your first run, execute: python examples/diaspora/diaspora.py setup")
+    logger.info("Kafka events include both raw 'message' and formatter-rendered 'formatted' fields.")
+    logger.info("Execution mode: %s", context.args.mode)
+    logger.info(
+        "Resolved logging targets: topic=%s log_file=%s level=%s",
+        context.topic,
+        context.log_file,
+        logging.getLevelName(context.log_level),
+    )
+
+
 def parse_log_level(value: str) -> int:
     level = getattr(logging, value.upper(), None)
     if not isinstance(level, int):

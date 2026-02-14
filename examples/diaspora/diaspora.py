@@ -63,19 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_options(monte_carlo_parser, "Number of Monte Carlo workers.")
     monte_carlo_parser.set_defaults(handler=run_monte_carlo_workflow)
 
-    failure_parser = subparsers.add_parser("failure", help="Run one of the failure/retry scenarios.")
-    _add_run_options(failure_parser, "Number of failing task pairs.")
+    failure_parser = subparsers.add_parser("failure", help="Run one of the python failure scenarios.")
+    _add_run_options(failure_parser, "Count used for Aurora profile selection.")
     failure_parser.add_argument(
         "--scenario",
         choices=SCENARIO_CHOICES,
         required=True,
         help="Failure scenario to execute.",
-    )
-    failure_parser.add_argument(
-        "--timeout-seconds",
-        type=int,
-        default=1,
-        help="Timeout used by the timeout scenario (seconds).",
     )
     failure_parser.set_defaults(handler=run_failure_scenario)
 

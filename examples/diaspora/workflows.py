@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import time
 
 from parsl.app.app import python_app
@@ -12,22 +11,10 @@ from config import (
     AURORA_MONITORING_INTERVAL_SECONDS,
     LOCAL_MONITORING_INTERVAL_SECONDS,
 )
-from runtime import execute_logged_command, loaded_parsl, make_config_for_mode
+from runtime import _log_common_workflow_start, execute_logged_command, loaded_parsl, make_config_for_mode
 
 PI_REFERENCE = 3.141592653589793
 MONTE_CARLO_POINTS_PER_WORKER = 2_000_000
-
-
-def _log_common_workflow_start(context, logger: logging.Logger) -> None:
-    logger.info("If this is your first run, execute: python examples/diaspora/diaspora.py setup")
-    logger.info("Kafka events include both raw 'message' and formatter-rendered 'formatted' fields.")
-    logger.info("Execution mode: %s", context.args.mode)
-    logger.info(
-        "Resolved logging targets: topic=%s log_file=%s level=%s",
-        context.topic,
-        context.log_file,
-        logging.getLevelName(context.log_level),
-    )
 
 
 def run_hello_workflow(args) -> int:

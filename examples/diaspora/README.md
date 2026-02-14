@@ -39,10 +39,9 @@ python diaspora.py monte-carlo --mode local --count 3
 python diaspora.py monte-carlo --mode aurora --count 3
 
 # failure scenarios
-python diaspora.py failure --scenario fail-once --mode local --count 1
-python diaspora.py failure --scenario timeout --mode local --count 1 --timeout-seconds 1
-python diaspora.py failure --scenario missing-output --mode local --count 1
 python diaspora.py failure --scenario python-div-zero --mode local
+python diaspora.py failure --scenario python-missing-module --mode local
+python diaspora.py failure --scenario python-pep750-t-string --mode local
 python diaspora.py failure --scenario python-chain --mode local
 
 # consume events containing "python_app"
@@ -54,18 +53,3 @@ python diaspora.py clear --mode local
 python diaspora.py clear --mode aurora
 python diaspora.py clear --topic my-topic --log-file my.log
 ```
-
-## Migration Map
-
-| Old command | New command |
-| --- | --- |
-| `python diaspora_setup.py` | `python diaspora.py setup` |
-| `python diaspora_run.py ...` | `python diaspora.py run ...` |
-| `python diaspora_run_ensemble.py ...` | `python diaspora.py monte-carlo ...` |
-| `python bash_failures/diaspora_run_failure1.py ...` | `python diaspora.py failure --scenario fail-once ...` |
-| `python bash_failures/diaspora_run_failure2.py ...` | `python diaspora.py failure --scenario timeout ...` |
-| `python bash_failures/diaspora_run_failure3.py ...` | `python diaspora.py failure --scenario missing-output ...` |
-| `python python_failures/python_div_by_zero.py ...` | `python diaspora.py failure --scenario python-div-zero ...` |
-| `python python_failures/chain.py ...` | `python diaspora.py failure --scenario python-chain ...` |
-| `python consume_topic.py ...` | `python diaspora.py consume ...` |
-| `python clear_topic_and_file.py ...` | `python diaspora.py clear ...` |
