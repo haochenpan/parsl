@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Failure demo 1: fail once, then succeed via retry policy.
+"""Failure demo 3: missing outputs + logic exceptions, then succeed via retry.
 
 Install dependencies from this checkout with:
     pip install -e ".[diaspora,monitoring]"
@@ -12,12 +12,19 @@ from __future__ import annotations
 
 import logging
 import shlex
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
 import parsl
 from parsl import AUTO_LOGNAME, bash_app
 from parsl.app.app import python_app
+from parsl.data_provider.files import File
+
+# Allow running this script directly from bash_failures/ while importing shared helpers.
+DIASPORA_DIR = Path(__file__).resolve().parent.parent
+if str(DIASPORA_DIR) not in sys.path:
+    sys.path.insert(0, str(DIASPORA_DIR))
 
 from config import (
     AURORA_MODE,
@@ -34,7 +41,7 @@ from util import (
 
 RETRY_BUDGET = 1
 
-retry_policy_logger = logging.getLogger("parsl.examples.diaspora.failure1.retry_policy")
+retry_policy_logger = logging.getLogger("parsl.examples.diaspora.failure3.retry_policy")
 
 
 def retry_once_policy(exception: Exception, task_record: Dict[str, Any]) -> float:
@@ -47,7 +54,7 @@ def retry_once_policy(exception: Exception, task_record: Dict[str, Any]) -> floa
         fail_count,
         type(exception).__name__,
     )
-    if fail_count <= 1:
+    if fail_count <= RETRY_BUDGET:
         return 1.0
     return float(RETRY_BUDGET + 1)
 
@@ -62,35 +69,41 @@ def apply_debug_and_retry_policy(config: Any) -> None:
 
 
 @python_app
-def flaky_python_once(marker_file: str, task_index: int) -> str:
+def zero_division_python_once(marker_file: str, task_index: int) -> str:
     from pathlib import Path
 
     marker = Path(marker_file)
     marker.parent.mkdir(parents=True, exist_ok=True)
     if not marker.exists():
-        marker.write_text("failed_once\n", encoding="utf-8")
-        raise RuntimeError(f"INTENTIONAL_PYTHON_FAILURE1 task={task_index}")
-    return f"PYTHON_SUCCESS1 task={task_index}"
+        marker.write_text("zero_div_once\n", encoding="utf-8")
+        _ = 1 / 0
+    return f"PYTHON_SUCCESS3 task={task_index} after_zero_division_retry=1"
 
 
 @bash_app
-def flaky_bash_once(
+def missing_output_bash_once(
     marker_file: str,
+    output_file: str,
     task_index: int,
+    outputs=(),
     stdout=AUTO_LOGNAME,
     stderr=AUTO_LOGNAME,
 ):
     marker_q = shlex.quote(marker_file)
+    output_q = shlex.quote(output_file)
     return "\n".join(
         [
             "set -euo pipefail",
             f'mkdir -p "$(dirname {marker_q})"',
+            f'mkdir -p "$(dirname {output_q})"',
             f"if [ ! -f {marker_q} ]; then",
-            f'  echo "INTENTIONAL_BASH_FAILURE1 task={task_index}" 1>&2',
             f"  touch {marker_q}",
-            "  exit 23",
+            f'  echo "INTENTIONAL_BASH_MISSING_OUTPUT3 task={task_index}" 1>&2',
+            "  # Exit 0 but do not create declared output to trigger MissingOutputs.",
+            "  exit 0",
             "fi",
-            f'echo "BASH_SUCCESS1 task={task_index}"',
+            f'echo "payload task={task_index}" > {output_q}',
+            f'echo "BASH_SUCCESS3 task={task_index} after_missing_output_retry=1"',
         ]
     )
 
@@ -98,10 +111,10 @@ def flaky_bash_once(
 def main(default_mode: str = "local") -> None:
     args = parse_run_args(
         description=(
-            "Run artificial python_app + bash_app failures that recover on retry "
+            "Run zero-division + missing-output failures that recover on retry "
             "with verbose monitoring/logging."
         ),
-        count_help="Number of failing task pairs.",
+        count_help="Number of missing-output/zero-division task pairs.",
         default_mode=default_mode,
     )
     args.log_level = logging.DEBUG
@@ -123,7 +136,7 @@ def main(default_mode: str = "local") -> None:
         level=args.log_level,
         format_string=DIASPORA_DEMO_FORMAT,
     )
-    logger = logging.getLogger(f"parsl.examples.diaspora.failure1.{args.mode}")
+    logger = logging.getLogger(f"parsl.examples.diaspora.failure3.{args.mode}")
     loaded = False
 
     try:
@@ -147,24 +160,29 @@ def main(default_mode: str = "local") -> None:
             logger.info("Parsl loaded. run_id=%s", getattr(dfk, "run_id", "<unknown>"))
             logger.info("Retry budget=%d with policy=retry_once_policy", RETRY_BUDGET)
 
-            marker_root = Path(dfk.run_dir) / "failure1_markers"
+            marker_root = Path(dfk.run_dir) / "failure3_markers"
+            output_root = Path(dfk.run_dir) / "failure3_outputs"
             marker_root.mkdir(parents=True, exist_ok=True)
+            output_root.mkdir(parents=True, exist_ok=True)
 
             python_futures = []
             bash_futures = []
             for i in range(args.count):
                 py_marker = marker_root / f"python_task_{i}.marker"
                 bash_marker = marker_root / f"bash_task_{i}.marker"
-                python_futures.append(flaky_python_once(str(py_marker), i))
+                bash_output = output_root / f"bash_task_{i}.txt"
+                python_futures.append(zero_division_python_once(str(py_marker), i))
                 bash_futures.append(
-                    flaky_bash_once(
+                    missing_output_bash_once(
                         str(bash_marker),
+                        str(bash_output),
                         i,
+                        outputs=[File(str(bash_output))],
                         stdout=AUTO_LOGNAME,
                         stderr=AUTO_LOGNAME,
                     )
                 )
-                logger.info("Submitted failure pair %d", i)
+                logger.info("Submitted missing-output/zero-division pair %d", i)
 
             for i, fut in enumerate(python_futures):
                 result = fut.result()
@@ -172,10 +190,10 @@ def main(default_mode: str = "local") -> None:
 
             for i, fut in enumerate(bash_futures):
                 fut.result()
-                logger.info("bash_app result %d: success after retry", i)
+                logger.info("bash_app result %d: success after missing-output retry", i)
 
             logger.info(
-                "Failure demo 1 complete: all %d python and %d bash tasks succeeded after retry.",
+                "Failure demo 3 complete: all %d python and %d bash tasks succeeded after retry.",
                 len(python_futures),
                 len(bash_futures),
             )

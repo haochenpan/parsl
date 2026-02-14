@@ -7,9 +7,9 @@ This folder contains small Parsl + Diaspora utilities for local and Aurora runs.
 - `diaspora_setup.py`: one-time Diaspora user bootstrap (`create_user()`).
 - `diaspora_run.py`: main hello-world workflow runner with Diaspora logging.
 - `diaspora_run_ensemble.py`: ensemble + analysis workflow with richer task logs.
-- `diaspora_run_failure1.py`: fail-once then retry-success for both `python_app` and `bash_app`.
-- `diaspora_run_failure2.py`: timeout failures (`AppTimeout`) then retry-success for both app types.
-- `diaspora_run_failure3.py`: zero-division + missing-output failures then retry-success.
+- `bash_failures/diaspora_run_failure1.py`: fail-once then retry-success for both `python_app` and `bash_app`.
+- `bash_failures/diaspora_run_failure2.py`: timeout failures (`AppTimeout`) then retry-success for both app types.
+- `bash_failures/diaspora_run_failure3.py`: zero-division + missing-output failures then retry-success.
 - `consume_topic.py`: consumes a topic and prints events containing `"python_app"`.
 - `clear_topic_and_file.py`: recreates a Diaspora topic and removes a local log file.
 - `config.py`: shared constants/defaults plus local/Aurora Parsl config builders and common run-argument parser.
@@ -30,7 +30,7 @@ This folder contains small Parsl + Diaspora utilities for local and Aurora runs.
 
 ## Common Run Args
 
-`diaspora_run.py`, `diaspora_run_ensemble.py`, and `diaspora_run_failure*.py` share:
+`diaspora_run.py`, `diaspora_run_ensemble.py`, and `bash_failures/diaspora_run_failure*.py` share:
 
 - `--mode {local,aurora}`
 - `--topic TOPIC`
@@ -60,9 +60,9 @@ python consume_topic.py --mode local
 python consume_topic.py --mode aurora
 
 # 5) failure demos
-python diaspora_run_failure1.py --mode local --count 1
-python diaspora_run_failure2.py --mode local --count 1
-python diaspora_run_failure3.py --mode local --count 1
+python bash_failures/diaspora_run_failure1.py --mode local --count 1
+python bash_failures/diaspora_run_failure2.py --mode local --count 1
+python bash_failures/diaspora_run_failure3.py --mode local --count 1
 
 # 6) clear_topic_and_file.py
 python clear_topic_and_file.py --mode local

@@ -12,12 +12,18 @@ from __future__ import annotations
 
 import logging
 import shlex
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
 import parsl
 from parsl import AUTO_LOGNAME, bash_app
 from parsl.app.app import python_app
+
+# Allow running this script directly from bash_failures/ while importing shared helpers.
+DIASPORA_DIR = Path(__file__).resolve().parent.parent
+if str(DIASPORA_DIR) not in sys.path:
+    sys.path.insert(0, str(DIASPORA_DIR))
 
 from config import (
     AURORA_MODE,
