@@ -167,5 +167,40 @@ The retry handler is given two parameters: the exception from execution, and
 the parsl internal task_record. The task record contains details such as the
 app name, parameters and executor.
 
+In Parsl-diaspora versions, a retry handler can also return a
+``parsl.RetryDirective`` instead of a float. A ``RetryDirective`` contains:
+
+- ``cost``: retry budget cost to apply
+- ``patch`` (optional): a ``parsl.RetryPatch`` runtime replacement callable
+  used for the next retry attempt
+- ``reason`` (optional): human-readable decision reason
+
+When a patch is provided, Parsl validates that:
+
+- the patch callable is distinct from the existing task callable
+- the patch callable can be serialized for worker execution
+
+This enables runtime-only patching flows (for example, LLM-generated syntax
+fixes) without writing changes back to source files.
+
+Example using the built-in policy builder:
+
+.. code-block:: python
+
+     import parsl
+     from parsl.config import Config
+
+     llm_client = parsl.MiniMaxOpenAICompatClient()  # requires MINIMAX_API_KEY
+     retry_handler = parsl.build_retry_llm_policy(
+          llm_client=llm_client,
+          diaspora_topic="topic-parsl-local",
+          model="MiniMax-M2.5",
+     )
+
+     config = Config(
+          retries=1,
+          retry_handler=retry_handler,
+     )
+
 If a retry handler raises an exception itself, then the task will be aborted
 and no further tries will be attempted.

@@ -29,6 +29,14 @@ from parsl.executors import (
 )
 from parsl.log_utils import set_diaspora_logger, set_file_logger, set_stream_logger
 from parsl.monitoring import MonitoringHub
+from parsl.retries import (
+    LLMRetryClient,
+    MiniMaxOpenAICompatClient,
+    RetryDecision,
+    RetryDirective,
+    RetryPatch,
+    build_retry_llm_policy,
+)
 from parsl.version import VERSION
 
 __author__ = 'The Parsl Team'
@@ -62,6 +70,14 @@ __all__ = [
 
     # monitoring
     'MonitoringHub',
+
+    # retry policy extensions
+    'RetryDecision',
+    'RetryDirective',
+    'RetryPatch',
+    'LLMRetryClient',
+    'MiniMaxOpenAICompatClient',
+    'build_retry_llm_policy',
 ]
 
 clear = DataFlowKernelLoader.clear

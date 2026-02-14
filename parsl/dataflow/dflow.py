@@ -10,6 +10,7 @@ import random
 import sys
 import threading
 import time
+import traceback
 from concurrent.futures import Future
 from functools import partial
 from getpass import getuser
@@ -48,6 +49,8 @@ from parsl.monitoring.message_type import MessageType
 from parsl.monitoring.radios.multiprocessing import MultiprocessingQueueRadioSender
 from parsl.monitoring.remote import monitor_wrapper
 from parsl.process_loggers import wrap_with_logs
+from parsl.retries.types import RetryDecision, RetryDirective, RetryPatch
+from parsl.serialize import serialize
 from parsl.usage_tracking.usage import UsageTracker
 from parsl.utils import get_std_fname_mode, get_version
 
@@ -300,6 +303,74 @@ class DataFlowKernel:
         """
         return self._config
 
+    def _log_retry_diagnostic(self, task_record: TaskRecord, exception: Exception) -> None:
+        tb_text = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+        logger.info(
+            "Recorded retry diagnostics for task %s",
+            task_record["id"],
+            extra={
+                "parsl_run_id": self.run_id,
+                "parsl_task_id": int(task_record["id"]),
+                "parsl_try_id": int(task_record.get("try_id", 0)),
+                "parsl_func_name": str(task_record.get("func_name", "<unknown>")),
+                "parsl_exception_type": type(exception).__name__,
+                "parsl_exception_message": str(exception),
+                "parsl_exception_traceback": tb_text,
+                "parsl_fail_count": int(task_record.get("fail_count", 0)),
+            },
+        )
+
+    def _normalize_retry_decision(self, decision: RetryDecision) -> RetryDirective:
+        if isinstance(decision, RetryDirective):
+            cost = float(decision.cost)
+            if cost < 0:
+                raise ValueError("RetryDirective.cost must be >= 0")
+            return RetryDirective(cost=cost, patch=decision.patch, reason=decision.reason)
+
+        cost = float(decision)
+        if cost < 0:
+            raise ValueError("retry_handler cost must be >= 0")
+        return RetryDirective(cost=cost)
+
+    def _apply_retry_patch(self, task_record: TaskRecord, patch: RetryPatch) -> None:
+        current_func = task_record["func"]
+        new_func = patch.func
+
+        if not callable(new_func):
+            raise TypeError("RetryPatch.func must be callable")
+
+        # Dill callable serializer caches by object identity, so a true replacement
+        # callable must be a distinct object.
+        if new_func is current_func:
+            raise ValueError("RetryPatch.func must be a distinct callable object")
+
+        try:
+            serialize(new_func)
+        except Exception as exc:
+            raise RuntimeError("RetryPatch.func failed serialization preflight") from exc
+
+        metadata: Dict[str, Any]
+        try:
+            metadata = dict(patch.metadata)
+        except Exception:
+            metadata = {"repr": repr(patch.metadata)}
+
+        history_entry = {
+            "patch_id": patch.patch_id,
+            "try_id": int(task_record.get("try_id", 0)),
+            "applied_at": datetime.datetime.now().isoformat(),
+            "old_func_repr": repr(current_func),
+            "new_func_repr": repr(new_func),
+            "metadata": metadata,
+        }
+        history = list(task_record.get("retry_patch_history", []))
+        history.append(history_entry)
+
+        task_record["func"] = new_func
+        task_record["retry_patch_history"] = history
+        task_record["retry_patch_applied"] = True
+        task_record["retry_patch_last_error"] = None
+
     def handle_exec_update(self, task_record: TaskRecord, future: Future) -> None:
         """This function is called only as a callback from an execution
         attempt reaching a final state (either successfully or failing).
@@ -329,21 +400,26 @@ class DataFlowKernel:
             # tossed.
             task_record['fail_history'].append(repr(e))
             task_record['fail_count'] += 1
+            self._log_retry_diagnostic(task_record, e)
             if self._config.retry_handler:
                 try:
-                    cost = self._config.retry_handler(e, task_record)
+                    retry_decision = self._config.retry_handler(e, task_record)
+                    retry_directive = self._normalize_retry_decision(retry_decision)
+                    if retry_directive.patch is not None:
+                        self._apply_retry_patch(task_record, retry_directive.patch)
                 except Exception as retry_handler_exception:
                     logger.exception("retry_handler raised an exception - will not retry")
 
                     # this can be any amount > self._config.retries, to stop any more
                     # retries from happening
                     task_record['fail_cost'] = self._config.retries + 1
+                    task_record["retry_patch_last_error"] = str(retry_handler_exception)
 
                     # make the reported exception be the retry handler's exception,
                     # rather than the execution level exception
                     e = retry_handler_exception
                 else:
-                    task_record['fail_cost'] += cost
+                    task_record['fail_cost'] += retry_directive.cost
             else:
                 task_record['fail_cost'] += 1
 
@@ -957,6 +1033,9 @@ class DataFlowKernel:
                        'fail_count': 0,
                        'fail_cost': 0,
                        'fail_history': [],
+                       'retry_patch_applied': False,
+                       'retry_patch_last_error': None,
+                       'retry_patch_history': [],
                        'from_memo': None,
                        'ignore_for_cache': ignore_for_cache,
                        'join': join,

@@ -11,6 +11,7 @@ from parsl.errors import ConfigurationError
 from parsl.executors.base import ParslExecutor
 from parsl.executors.threads import ThreadPoolExecutor
 from parsl.monitoring import MonitoringHub
+from parsl.retries.types import RetryDecision
 from parsl.usage_tracking.api import UsageInformation
 from parsl.usage_tracking.levels import DISABLED as USAGE_TRACKING_DISABLED
 from parsl.usage_tracking.levels import LEVEL_3 as USAGE_TRACKING_LEVEL_3
@@ -51,8 +52,10 @@ class Config(RepresentationMixin, UsageInformation):
         Set the number of retries (or available retry budget when using retry_handler) in case of failure. Default is 0.
     retry_handler : function, optional
         A user pluggable handler to decide if/how a task retry should happen.
-        If no handler is specified, then each task failure incurs a retry cost
-        of 1.
+        The handler can return either:
+        - a float retry cost, or
+        - a RetryDirective retry decision containing cost and optional runtime patch.
+        If no handler is specified, then each task failure incurs a retry cost of 1.
     run_dir : str, optional
         Path to run directory. Default is 'runinfo'.
     std_autopath : function, optional
@@ -96,7 +99,7 @@ class Config(RepresentationMixin, UsageInformation):
                  garbage_collect: bool = True,
                  internal_tasks_max_threads: int = 10,
                  retries: int = 0,
-                 retry_handler: Optional[Callable[[Exception, TaskRecord], float]] = None,
+                 retry_handler: Optional[Callable[[Exception, TaskRecord], RetryDecision]] = None,
                  run_dir: str = 'runinfo',
                  std_autopath: Optional[Callable] = None,
                  strategy: Optional[str] = 'simple',

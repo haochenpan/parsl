@@ -46,6 +46,9 @@ class TaskRecord(TypedDict, total=False):
     fail_count: int
     fail_cost: float
     fail_history: List[str]
+    retry_patch_applied: bool
+    retry_patch_last_error: Optional[str]
+    retry_patch_history: List[Dict[str, Any]]
 
     checkpoint: bool
     """Should this task be checkpointed?
