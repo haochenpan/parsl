@@ -1,22 +1,15 @@
-# Diaspora Examples
+# Diaspora Examples CLI
 
-This folder contains small Parsl + Diaspora utilities for local and Aurora runs.
+This directory now uses a single entrypoint CLI:
 
-## Files
+- `diaspora.py`: unified command surface for setup, workflows, failures, consume, and clear.
+- `config.py`: shared constants/defaults and local/Aurora Parsl config builders.
+- `runtime.py`: shared logging/config/Parsl runtime helpers.
+- `workflows.py`: hello-world and Monte Carlo Pi workflows.
+- `failures.py`: unified failure scenario engine.
+- `topic_ops.py`: setup/consume/clear handlers.
 
-- `diaspora_setup.py`: one-time Diaspora user bootstrap (`create_user()`).
-- `diaspora_run.py`: main hello-world workflow runner with Diaspora logging.
-- `diaspora_run_ensemble.py`: ensemble + analysis workflow with richer task logs.
-- `bash_failures/diaspora_run_failure1.py`: fail-once then retry-success for both `python_app` and `bash_app`.
-- `bash_failures/diaspora_run_failure2.py`: timeout failures (`AppTimeout`) then retry-success for both app types.
-- `bash_failures/diaspora_run_failure3.py`: zero-division + missing-output failures then retry-success.
-- `consume_topic.py`: consumes a topic and prints events containing `"python_app"`.
-- `clear_topic_and_file.py`: recreates a Diaspora topic and removes a local log file.
-- `config.py`: shared constants/defaults plus local/Aurora Parsl config builders and common run-argument parser.
-- `util.py`: shared helpers for topic/log-file resolution and metrics.
-- `monitoring_radios_loggers_architecture.md`: deep code map of monitoring radios/loggers, event flow, communication diagrams, and submitter-visible behavior.
-
-## Modes and Defaults
+## Defaults
 
 - `local`
   - topic: `topic-parsl-local`
@@ -24,50 +17,55 @@ This folder contains small Parsl + Diaspora utilities for local and Aurora runs.
 - `aurora`
   - topic: `topic-parsl-aurora-debug`
   - log file: `parsl-aurora-debug.log`
-  - queue selection still depends on `--count`:
+  - queue selection by `--count`:
     - `count` 1 or 2 -> `debug`
     - otherwise -> `debug-scaling`
 
-## Common Run Args
-
-`diaspora_run.py`, `diaspora_run_ensemble.py`, and `bash_failures/diaspora_run_failure*.py` share:
-
-- `--mode {local,aurora}`
-- `--topic TOPIC`
-- `--count COUNT`
-- `--log-file LOG_FILE`
-- `--log-level LOG_LEVEL`
-
-## Quick Usage
+## Usage
 
 ```bash
 # from repo root
 cd examples/diaspora
 
-# 1) one-time setup (no mode)
-python diaspora_setup.py
+# one-time setup
+python diaspora.py setup
 
-# 2) diaspora_run.py
-python diaspora_run.py --mode local --count 3
-python diaspora_run.py --mode aurora --count 3
+# hello workflow
+python diaspora.py run --mode local --count 3
+python diaspora.py run --mode aurora --count 3
 
-# 3) diaspora_run_ensemble.py
-python diaspora_run_ensemble.py --mode local --count 3
-python diaspora_run_ensemble.py --mode aurora --count 3
+# Monte Carlo Pi workflow
+python diaspora.py monte-carlo --mode local --count 3
+python diaspora.py monte-carlo --mode aurora --count 3
 
-# 4) consume_topic.py
-python consume_topic.py --mode local
-python consume_topic.py --mode aurora
+# failure scenarios
+python diaspora.py failure --scenario fail-once --mode local --count 1
+python diaspora.py failure --scenario timeout --mode local --count 1 --timeout-seconds 1
+python diaspora.py failure --scenario missing-output --mode local --count 1
+python diaspora.py failure --scenario python-div-zero --mode local
+python diaspora.py failure --scenario python-chain --mode local
 
-# 5) failure demos
-python bash_failures/diaspora_run_failure1.py --mode local --count 1
-python bash_failures/diaspora_run_failure2.py --mode local --count 1
-python bash_failures/diaspora_run_failure3.py --mode local --count 1
+# consume events containing "python_app"
+python diaspora.py consume --mode local
+python diaspora.py consume --mode aurora
 
-# 6) clear_topic_and_file.py
-python clear_topic_and_file.py --mode local
-python clear_topic_and_file.py --mode aurora
-
-# optional: reset specific topic/file
-python clear_topic_and_file.py --topic my-topic --log-file my.log
+# recreate topic + remove file
+python diaspora.py clear --mode local
+python diaspora.py clear --mode aurora
+python diaspora.py clear --topic my-topic --log-file my.log
 ```
+
+## Migration Map
+
+| Old command | New command |
+| --- | --- |
+| `python diaspora_setup.py` | `python diaspora.py setup` |
+| `python diaspora_run.py ...` | `python diaspora.py run ...` |
+| `python diaspora_run_ensemble.py ...` | `python diaspora.py monte-carlo ...` |
+| `python bash_failures/diaspora_run_failure1.py ...` | `python diaspora.py failure --scenario fail-once ...` |
+| `python bash_failures/diaspora_run_failure2.py ...` | `python diaspora.py failure --scenario timeout ...` |
+| `python bash_failures/diaspora_run_failure3.py ...` | `python diaspora.py failure --scenario missing-output ...` |
+| `python python_failures/python_div_by_zero.py ...` | `python diaspora.py failure --scenario python-div-zero ...` |
+| `python python_failures/chain.py ...` | `python diaspora.py failure --scenario python-chain ...` |
+| `python consume_topic.py ...` | `python diaspora.py consume ...` |
+| `python clear_topic_and_file.py ...` | `python diaspora.py clear ...` |

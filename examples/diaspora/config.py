@@ -1,11 +1,8 @@
-"""Shared config for diaspora example runners/utilities."""
+"""Shared config primitives for diaspora examples."""
 
 from __future__ import annotations
 
-import argparse
-import logging
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,7 +19,9 @@ AURORA_TOPIC = "topic-parsl-aurora-debug"
 AURORA_LOG_FILE = "parsl-aurora-debug.log"
 
 AURORA_ACCOUNT = "Diaspora"
-MONITORING_INTERVAL_SECONDS = 10
+LOCAL_MONITORING_INTERVAL_SECONDS = 0.5
+AURORA_MONITORING_INTERVAL_SECONDS = 10
+DIASPORA_MODULE_DIR = Path(__file__).resolve().parent
 
 
 def resolve_aurora_queue(count: int) -> str:
@@ -41,40 +40,20 @@ def defaults_for_mode(mode: str) -> tuple[str, str]:
     raise ValueError(f"Unsupported mode: {mode}")
 
 
-def parse_run_args(
-    description: str,
-    count_help: str,
-    default_mode: str = LOCAL_MODE,
-) -> argparse.Namespace:
-    # Local import avoids module cycle: util imports defaults_for_mode from this module.
-    from util import parse_log_level
-
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument(
-        "--mode",
-        choices=[LOCAL_MODE, AURORA_MODE],
-        default=default_mode,
-        help="Execution mode: local thread pool or Aurora PBS.",
-    )
-    parser.add_argument("--topic", default=None, help="Diaspora topic name (without namespace).")
-    parser.add_argument("--count", type=int, default=3, help=count_help)
-    parser.add_argument("--log-file", default=None, help="Local file logger output path.")
-    parser.add_argument(
-        "--log-level",
-        type=parse_log_level,
-        default=logging.INFO,
-        help="Logging level for stream/file/Diaspora handlers (for example: DEBUG, INFO, WARNING).",
-    )
-    return parser.parse_args()
-
-
-def make_monitoring_config():
+def make_monitoring_config(mode: str):
     from parsl.monitoring import MonitoringHub
+
+    if mode == LOCAL_MODE:
+        interval = LOCAL_MONITORING_INTERVAL_SECONDS
+    elif mode == AURORA_MODE:
+        interval = AURORA_MONITORING_INTERVAL_SECONDS
+    else:
+        raise ValueError(f"Unsupported mode: {mode}")
 
     return MonitoringHub(
         monitoring_debug=True,
         resource_monitoring_enabled=True,
-        resource_monitoring_interval=MONITORING_INTERVAL_SECONDS,
+        resource_monitoring_interval=interval,
     )
 
 
@@ -84,7 +63,7 @@ def make_local_config() -> Config:
 
     return Config(
         executors=[ThreadPoolExecutor(label="local_threads", max_threads=2)],
-        monitoring=make_monitoring_config(),
+        monitoring=make_monitoring_config(mode=LOCAL_MODE),
         initialize_logging=False,
     )
 
@@ -97,57 +76,22 @@ def make_aurora_config(count: int) -> tuple[Config, str, str]:
     from parsl.providers import PBSProProvider
 
     account, queue = resolve_aurora_profile(count)
-    python_bin = Path(sys.executable).parent
-    env_venv = os.environ.get("VIRTUAL_ENV")
-    candidate_bins = [python_bin]
-    if env_venv:
-        candidate_bins.insert(0, Path(env_venv) / "bin")
-
-    htex_script_bin = python_bin
-    for bin_dir in candidate_bins:
-        if (bin_dir / "interchange.py").exists() and (bin_dir / "process_worker_pool.py").exists():
-            htex_script_bin = bin_dir
-            break
-
-    venv = env_venv or str(htex_script_bin.parent)
+    venv = os.environ.get("VIRTUAL_ENV")
     worker_init_parts = [
         "export TMPDIR=/tmp",
         "export TEMP=/tmp",
         "export TMP=/tmp",
+        f"export PYTHONPATH={DIASPORA_MODULE_DIR}:${{PYTHONPATH:-}}",
     ]
     if venv:
         worker_init_parts.append(f"source {venv}/bin/activate")
     worker_init = "; ".join(worker_init_parts)
-    launch_cmd = (
-        f"{htex_script_bin}/process_worker_pool.py "
-        "{debug} {max_workers_per_node} "
-        "-a {addresses} "
-        "-p {prefetch_capacity} "
-        "-c {cores_per_worker} "
-        "-m {mem_per_worker} "
-        "--poll {poll_period} "
-        "--port={worker_port} "
-        "--cert_dir {cert_dir} "
-        "--logdir={logdir} "
-        "--block_id={{block_id}} "
-        "--hb_period={heartbeat_period} "
-        "{address_probe_timeout_string} "
-        "--hb_threshold={heartbeat_threshold} "
-        "--drain_period={drain_period} "
-        "--cpu-affinity {cpu_affinity} "
-        "{enable_mpi_mode} "
-        "--mpi-launcher={mpi_launcher} "
-        "--available-accelerators {accelerators}"
-    )
-    interchange_launch_cmd = [f"{htex_script_bin}/interchange.py"]
 
     config = Config(
         executors=[
             HighThroughputExecutor(
                 label="aurora_htex",
                 address=address_by_hostname(),
-                launch_cmd=launch_cmd,
-                interchange_launch_cmd=interchange_launch_cmd,
                 worker_debug=True,
                 provider=PBSProProvider(
                     account=account,
@@ -165,7 +109,7 @@ def make_aurora_config(count: int) -> tuple[Config, str, str]:
                 ),
             )
         ],
-        monitoring=make_monitoring_config(),
+        monitoring=make_monitoring_config(mode=AURORA_MODE),
         initialize_logging=False,
     )
     return config, account, queue

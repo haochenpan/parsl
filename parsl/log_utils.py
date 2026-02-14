@@ -184,7 +184,7 @@ def set_diaspora_logger(topic_name: str = "topic-parsl-logs",
             raise RuntimeError(
                 "diaspora-event-sdk with kafka-python support is required. "
                 "Install with: pip install -e '.[diaspora]'. "
-                "Then run: python examples/diaspora/diaspora_setup.py"
+                "Then run: python examples/diaspora/diaspora.py setup"
             ) from e
 
         try:
@@ -202,7 +202,7 @@ def set_diaspora_logger(topic_name: str = "topic-parsl-logs",
         except Exception as e:
             raise RuntimeError(
                 "Failed to initialize Diaspora logging producer. "
-                "Run: python examples/diaspora/diaspora_setup.py"
+                "Run: python examples/diaspora/diaspora.py setup"
             ) from e
     else:
         kafka_topic = topic_name
