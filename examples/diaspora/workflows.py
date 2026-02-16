@@ -17,40 +17,65 @@ PI_REFERENCE = 3.141592653589793
 MONTE_CARLO_POINTS_PER_WORKER = 2_000_000
 
 
+def _workflow_log_extra(*, run_id=None, task_id=None) -> dict[str, object]:
+    extra: dict[str, object] = {}
+    if run_id is not None:
+        extra["run_id"] = run_id
+    if task_id is not None:
+        extra["task_id"] = task_id
+    return extra
+
+
 def run_hello_workflow(args) -> int:
     if args.count < 1:
         raise ValueError("--count must be >= 1")
 
     def _run(context) -> None:
         logger = context.logger
+        run_id = None
 
         _log_common_workflow_start(context, logger)
-        logger.info("Launching hello workflow with %d tasks.", context.args.count)
+        logger.info(
+            "Launching hello workflow with %d tasks.",
+            context.args.count,
+            extra=_workflow_log_extra(run_id=run_id),
+        )
 
         task_env = "Aurora" if context.args.mode == AURORA_MODE else "local"
         config = make_config_for_mode(context.args.mode, context.args.count, logger)
 
         with loaded_parsl(config) as dfk:
-            logger.info("Parsl loaded. run_id=%s", getattr(dfk, "run_id", "<unknown>"))
+            run_id = getattr(dfk, "run_id", None)
+            logger.info(
+                "Parsl loaded. run_id=%s",
+                run_id if run_id is not None else "<unknown>",
+                extra=_workflow_log_extra(run_id=run_id),
+            )
 
             @python_app
             def hello(i: int) -> str:
                 return f"Hello from Parsl {task_env} task {i}"
 
             futures = [hello(i) for i in range(context.args.count)]
-            results = [f.result() for f in futures]
-            for result in results:
-                logger.info("Task result: %s", result)
+            for future in futures:
+                task_id = getattr(future, "tid", None)
+                result = future.result()
+                logger.info(
+                    "Task result: %s",
+                    result,
+                    extra=_workflow_log_extra(run_id=run_id, task_id=task_id),
+                )
 
         logger.info(
             "Completed %d tasks. Log records were sent to Diaspora topic '%s'.",
             context.args.count,
             context.topic,
+            extra=_workflow_log_extra(run_id=run_id),
         )
 
     return execute_logged_command(
         args,
-        logger_name=f"parsl.examples.diaspora.run.{args.mode}",
+        logger_name="parsl.examples.diaspora.hello",
         command=_run,
     )
 
@@ -63,17 +88,24 @@ def run_monte_carlo_workflow(args) -> int:
         logger = context.logger
         is_aurora = context.args.mode == AURORA_MODE
         workflow_start = time.time()
+        run_id = None
 
         _log_common_workflow_start(context, logger)
         logger.info(
             "Launching Monte Carlo Pi with %d workers and %d points per worker.",
             context.args.count,
             MONTE_CARLO_POINTS_PER_WORKER,
+            extra=_workflow_log_extra(run_id=run_id),
         )
 
         config = make_config_for_mode(context.args.mode, context.args.count, logger)
         with loaded_parsl(config) as dfk:
-            logger.info("Parsl loaded. run_id=%s", getattr(dfk, "run_id", "<unknown>"))
+            run_id = getattr(dfk, "run_id", None)
+            logger.info(
+                "Parsl loaded. run_id=%s",
+                run_id if run_id is not None else "<unknown>",
+                extra=_workflow_log_extra(run_id=run_id),
+            )
 
             @python_app
             def estimate_pi_worker(
@@ -86,7 +118,7 @@ def run_monte_carlo_workflow(args) -> int:
                 worker_logs = []
                 start_msg = f"[python_app] worker {worker_id} starting sample_count={sample_count}"
                 worker_logs.append(start_msg)
-                logger.info(start_msg)
+                logger.info(start_msg, extra=_workflow_log_extra(run_id=run_id))
                 rng = random.Random(9100 + worker_id)
                 inside = 0
                 start = _time.time()
@@ -102,7 +134,7 @@ def run_monte_carlo_workflow(args) -> int:
                     f"inside={inside} partial_pi={partial_pi:.8f}"
                 )
                 worker_logs.append(finish_msg)
-                logger.info(finish_msg)
+                logger.info(finish_msg, extra=_workflow_log_extra(run_id=run_id))
 
                 return {
                     "worker_id": worker_id,
@@ -137,16 +169,20 @@ def run_monte_carlo_workflow(args) -> int:
             for i in range(context.args.count):
                 future = estimate_pi_worker(i, MONTE_CARLO_POINTS_PER_WORKER)
                 worker_futures.append(future)
+                task_id = getattr(future, "tid", None)
                 logger.info(
                     "Submitted worker %d (task_id=%s)",
                     i,
-                    getattr(future, "tid", "n/a"),
+                    task_id if task_id is not None else "n/a",
+                    extra=_workflow_log_extra(run_id=run_id, task_id=task_id),
                 )
             aggregate_future = aggregate_pi(*worker_futures)
+            aggregate_task_id = getattr(aggregate_future, "tid", None)
             logger.info(
                 "Submitted final aggregation worker (task_id=%s) waiting on %d workers",
-                getattr(aggregate_future, "tid", "n/a"),
+                aggregate_task_id if aggregate_task_id is not None else "n/a",
                 len(worker_futures),
+                extra=_workflow_log_extra(run_id=run_id, task_id=aggregate_task_id),
             )
 
             pending = {f: i for i, f in enumerate(worker_futures)}
@@ -156,17 +192,26 @@ def run_monte_carlo_workflow(args) -> int:
                 if is_aurora
                 else LOCAL_MONITORING_INTERVAL_SECONDS
             )
-            logger.info("Heartbeat interval: %.1fs", heartbeat_seconds)
+            logger.info(
+                "Heartbeat interval: %.1fs",
+                heartbeat_seconds,
+                extra=_workflow_log_extra(run_id=run_id),
+            )
             while pending:
                 completed_now = [f for f in pending if f.done()]
                 for future in completed_now:
                     worker_id = pending.pop(future)
+                    task_id = getattr(future, "tid", None)
                     result = future.result()
                     worker_results[worker_id] = result
                     if is_aurora:
                         # Re-emit worker logs on submit side through the Diaspora logger.
                         for worker_log in result.get("worker_logs", []):
-                            logger.info("%s", worker_log)
+                            logger.info(
+                                "%s",
+                                worker_log,
+                                extra=_workflow_log_extra(run_id=run_id, task_id=task_id),
+                            )
                     logger.info(
                         "Worker %d complete: inside=%d/%d partial_pi=%.8f duration=%.2fs",
                         worker_id,
@@ -174,6 +219,7 @@ def run_monte_carlo_workflow(args) -> int:
                         result["samples"],
                         result["pi_partial"],
                         result["duration_s"],
+                        extra=_workflow_log_extra(run_id=run_id, task_id=task_id),
                     )
 
                 elapsed = time.time() - monte_carlo_start
@@ -186,11 +232,15 @@ def run_monte_carlo_workflow(args) -> int:
                     len(pending),
                     pending_ids,
                     aggregate_future.done(),
+                    extra=_workflow_log_extra(run_id=run_id, task_id=aggregate_task_id),
                 )
                 if pending:
                     time.sleep(heartbeat_seconds)
 
-            logger.info("All worker estimates finished; waiting for final aggregation worker.")
+            logger.info(
+                "All worker estimates finished; waiting for final aggregation worker.",
+                extra=_workflow_log_extra(run_id=run_id, task_id=aggregate_task_id),
+            )
             summary = aggregate_future.result()
             total_monte_carlo_s = time.time() - monte_carlo_start
             logger.info(
@@ -200,22 +250,29 @@ def run_monte_carlo_workflow(args) -> int:
                 summary["worker_count"],
                 summary["total_samples"],
                 summary["total_inside"],
+                extra=_workflow_log_extra(run_id=run_id, task_id=aggregate_task_id),
             )
             logger.info(
                 "Best partial worker by absolute error: worker_id=%d",
                 summary["best_partial_worker"],
+                extra=_workflow_log_extra(run_id=run_id, task_id=aggregate_task_id),
             )
             logger.info(
                 "Completed Monte Carlo Pi workflow with %d workers in %.1fs. Log records were sent to Diaspora topic '%s'.",
                 context.args.count,
                 total_monte_carlo_s,
                 context.topic,
+                extra=_workflow_log_extra(run_id=run_id, task_id=aggregate_task_id),
             )
 
-        logger.info("Workflow wall-clock time: %.1fs", time.time() - workflow_start)
+        logger.info(
+            "Workflow wall-clock time: %.1fs",
+            time.time() - workflow_start,
+            extra=_workflow_log_extra(run_id=run_id),
+        )
 
     return execute_logged_command(
         args,
-        logger_name=f"parsl.examples.diaspora.monte_carlo.{args.mode}",
+        logger_name="parsl.examples.diaspora.monte",
         command=_run,
     )
