@@ -250,7 +250,6 @@ def build_retry_llm_policy(
             diaspora_context = fetch_diaspora_context(
                 topic_name=diaspora_topic,
                 run_id=run_id,
-                task_id=task_id,
                 timeout_ms=diaspora_timeout_ms,
                 max_messages=diaspora_max_messages,
                 environment=environment,

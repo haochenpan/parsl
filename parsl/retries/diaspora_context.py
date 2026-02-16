@@ -8,27 +8,6 @@ from typing import Any, Dict, List, Mapping, Optional
 logger = logging.getLogger(__name__)
 
 
-def _payload_to_mapping(value: Any) -> Mapping[str, Any]:
-    if isinstance(value, Mapping):
-        return value
-    if isinstance(value, bytes):
-        text = value.decode("utf-8", errors="replace")
-    elif isinstance(value, str):
-        text = value
-    else:
-        text = str(value)
-
-    try:
-        maybe_json = json.loads(text)
-    except Exception:
-        return {"message": text}
-
-    if isinstance(maybe_json, Mapping):
-        return maybe_json
-
-    return {"message": text}
-
-
 def _task_matches(event: Mapping[str, Any], task_id: int) -> bool:
     explicit_ids = [event.get("parsl_task_id"), event.get("task_id")]
     for candidate in explicit_ids:
@@ -143,8 +122,7 @@ def _collect_tail_records(consumer: Any, *, max_messages: int, timeout_ms: int) 
 def fetch_diaspora_context(
     *,
     topic_name: str,
-    run_id: str,
-    task_id: int,
+    run_id: Optional[str] = None,
     timeout_ms: int = 30000,
     max_messages: int = 100,
     environment: Optional[str] = None,
@@ -169,7 +147,7 @@ def fetch_diaspora_context(
 
     tail_limit = max(0, int(max_messages))
     scanned = 0
-    matched: List[Dict[str, Any]] = []
+    matched: List[Any] = []
 
     try:
         tail_records = _collect_tail_records(
@@ -178,31 +156,21 @@ def fetch_diaspora_context(
             timeout_ms=timeout_ms,
         )
         for record in tail_records:
+            try:
+                value = json.loads(record.value.decode("utf-8", errors="replace"))
+            except Exception:
+                continue
+            event = dict(value)
+
+            if run_id is not None:
+                name = str(event.get("name", ""))
+                if not name.startswith("parsl.examples."):
+                    continue
+                if str(event.get("run_id", "")) != run_id:
+                    continue
+
             scanned += 1
-            value = getattr(record, "value", record)
-            event = dict(_payload_to_mapping(value))
-
-            if not _run_matches(event, run_id):
-                continue
-            if not _task_matches(event, task_id):
-                continue
-            if not _retry_relevant(event):
-                continue
-
-            matched.append(
-                {
-                    "created": event.get("created"),
-                    "asctime": event.get("asctime"),
-                    "levelname": event.get("levelname"),
-                    "name": event.get("name"),
-                    "message": event.get("message"),
-                    "formatted": event.get("formatted"),
-                    "parsl_run_id": event.get("parsl_run_id"),
-                    "parsl_task_id": event.get("parsl_task_id"),
-                    "parsl_try_id": event.get("parsl_try_id"),
-                    "parsl_exception_type": event.get("parsl_exception_type"),
-                }
-            )
+            matched.append(event.get("message"))
 
             if len(matched) >= max_messages:
                 break
@@ -212,7 +180,6 @@ def fetch_diaspora_context(
     return {
         "kafka_topic": kafka_topic,
         "run_id": run_id,
-        "task_id": task_id,
         "scanned": scanned,
         "matched_count": len(matched),
         "events": matched,

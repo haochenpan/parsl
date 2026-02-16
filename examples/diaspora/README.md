@@ -2,12 +2,12 @@
 
 This directory now uses a single entrypoint CLI:
 
-- `diaspora.py`: unified command surface for setup, workflows, failures, consume, and clear.
+- `diaspora.py`: unified command surface for setup, workflows, failures, context, and clear.
 - `config.py`: shared constants/defaults and local/Aurora Parsl config builders.
 - `runtime.py`: shared logging/config/Parsl runtime helpers.
 - `workflows.py`: hello-world and Monte Carlo Pi workflows.
 - `failures.py`: unified failure scenario engine.
-- `topic_ops.py`: setup/consume/clear handlers.
+- `topic_ops.py`: setup/context/clear handlers.
 
 ## Defaults
 
@@ -44,9 +44,12 @@ python diaspora.py failure --scenario python-missing-module --mode local
 python diaspora.py failure --scenario python-pep750-t-string --mode local
 python diaspora.py failure --scenario python-chain --mode local
 
-# consume events containing "python_app"
-python diaspora.py consume --mode local
-python diaspora.py consume --mode aurora
+# fetch retry context messages (all runs)
+python diaspora.py context --mode local
+python diaspora.py context --mode aurora
+
+# optionally filter by run_id
+python diaspora.py context --mode local --run_id 99f3d61b-58ab-4d8b-a004-bbfd1dbc43b9
 
 # recreate topic + remove file
 python diaspora.py clear --mode local

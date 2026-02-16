@@ -13,7 +13,7 @@ import logging
 from config import AURORA_MODE, LOCAL_MODE
 from failures import SCENARIO_CHOICES, run_failure_scenario
 from runtime import parse_log_level
-from topic_ops import run_clear, run_consume, run_setup
+from topic_ops import run_clear, run_context, run_setup
 from workflows import run_hello_workflow, run_monte_carlo_workflow
 
 
@@ -75,16 +75,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     failure_parser.set_defaults(handler=run_failure_scenario)
 
-    consume_parser = subparsers.add_parser("consume", help="Consume topic events matching 'python_app'.")
-    _add_mode_option(consume_parser, "Default topic profile when --topic is omitted.")
-    consume_parser.add_argument("--topic", default=None, help="Diaspora topic name without namespace.")
-    consume_parser.add_argument(
+    context_parser = subparsers.add_parser("context", help="Fetch context events (optionally filtered by run_id).")
+    _add_mode_option(context_parser, "Default topic profile when --topic is omitted.")
+    context_parser.add_argument("--topic", default=None, help="Diaspora topic name without namespace.")
+    context_parser.add_argument("--run_id", default=None, help="Optional Parsl run_id to filter on.")
+    context_parser.add_argument(
         "--timeout-ms",
         type=int,
-        default=10000,
+        default=30000,
         help="Consumer timeout in milliseconds when reading existing records.",
     )
-    consume_parser.set_defaults(handler=run_consume)
+    context_parser.add_argument(
+        "--max-messages",
+        type=int,
+        default=100,
+        help="Max number of matching records to return from topic tail.",
+    )
+    context_parser.add_argument(
+        "--environment",
+        default=None,
+        help="Optional Diaspora SDK environment override (for example: local).",
+    )
+    context_parser.set_defaults(handler=run_context)
 
     clear_parser = subparsers.add_parser("clear", help="Recreate a topic and remove a local log file.")
     _add_mode_option(clear_parser, "Default topic/log-file profile when args are omitted.")

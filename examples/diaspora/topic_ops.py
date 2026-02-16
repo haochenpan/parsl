@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
 
 from config import defaults_for_mode
-
-FILTER_TEXT = "python_app"
 
 
 def run_setup(args) -> int:
@@ -38,53 +35,20 @@ def run_setup(args) -> int:
     return 0
 
 
-def _payload_to_text(payload: Any) -> str:
-    if payload is None:
-        return ""
-    if isinstance(payload, bytes):
-        return payload.decode("utf-8", errors="replace")
-    if isinstance(payload, str):
-        return payload
-    if isinstance(payload, (dict, list)):
-        return json.dumps(payload, sort_keys=True, default=str)
-    return str(payload)
-
-
-def run_consume(args) -> int:
-    from diaspora_event_sdk import Client
-    from diaspora_event_sdk import KafkaConsumer
+def run_context(args) -> int:
+    from parsl.retries.diaspora_context import fetch_diaspora_context
 
     default_topic, _ = defaults_for_mode(args.mode)
     topic = args.topic or default_topic
 
-    client = Client()
-    kafka_topic = f"{client.namespace}.{topic}"
-
-    consumer = KafkaConsumer(
-        kafka_topic,
-        auto_offset_reset="earliest",
-        consumer_timeout_ms=args.timeout_ms,
-        enable_auto_commit=False,
+    context = fetch_diaspora_context(
+        topic_name=topic,
+        run_id=args.run_id,
+        timeout_ms=args.timeout_ms,
+        max_messages=args.max_messages,
+        environment=args.environment,
     )
-
-    matches = 0
-    try:
-        for record in consumer:
-            value = getattr(record, "value", record)
-            text = _payload_to_text(value)
-            if FILTER_TEXT not in text:
-                continue
-
-            matches += 1
-            if isinstance(value, (dict, list)):
-                printable = json.dumps(value, sort_keys=True, default=str)
-            else:
-                printable = text
-            print(printable)
-    finally:
-        consumer.close()
-
-    print(f"Matched {matches} event(s) containing {FILTER_TEXT!r} in topic '{kafka_topic}'.")
+    print(json.dumps(context, indent=2, default=str))
     return 0
 
 
