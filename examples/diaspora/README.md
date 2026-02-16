@@ -31,8 +31,8 @@ cd examples/diaspora
 python diaspora.py setup
 
 # hello workflow
-python diaspora.py run --mode local --count 3
-python diaspora.py run --mode aurora --count 3
+python diaspora.py hello-world --mode local --count 3
+python diaspora.py hello-world --mode aurora --count 3
 
 # Monte Carlo Pi workflow
 python diaspora.py monte-carlo --mode local --count 3

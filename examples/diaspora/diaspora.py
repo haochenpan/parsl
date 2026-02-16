@@ -51,13 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     setup_parser.set_defaults(handler=run_setup)
 
-    run_parser = subparsers.add_parser("run", help="Run the hello-world Parsl workflow.")
+    run_parser = subparsers.add_parser(
+        "hello-world",
+        help="Run the hello-world Parsl workflow.",
+    )
     _add_run_options(run_parser, "Number of hello tasks.")
     run_parser.set_defaults(handler=run_hello_workflow)
 
     monte_carlo_parser = subparsers.add_parser(
         "monte-carlo",
-        aliases=["ensemble"],
         help="Run Monte Carlo Pi estimation workflow.",
     )
     _add_run_options(monte_carlo_parser, "Number of Monte Carlo workers.")
