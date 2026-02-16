@@ -127,7 +127,12 @@ def fetch_diaspora_context(
     max_messages: int = 100,
     environment: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Fetch and normalize retry context from a Diaspora topic."""
+    """Fetch and normalize retry context from a Diaspora topic.
+
+    When run_id is provided, collection starts at the first event whose logger
+    name starts with ``parsl.examples.`` and whose ``run_id`` matches. That
+    matching event and all following events are returned.
+    """
 
     try:
         from diaspora_event_sdk import Client
@@ -155,6 +160,7 @@ def fetch_diaspora_context(
             max_messages=tail_limit,
             timeout_ms=timeout_ms,
         )
+        started_collecting = run_id is None
         for record in tail_records:
             try:
                 value = json.loads(record.value.decode("utf-8", errors="replace"))
@@ -162,15 +168,13 @@ def fetch_diaspora_context(
                 continue
             event = dict(value)
 
-            if run_id is not None:
-                name = str(event.get("name", ""))
-                if not name.startswith("parsl.examples."):
-                    continue
+            if run_id is not None and not started_collecting:
                 if str(event.get("run_id", "")) != run_id:
                     continue
+                started_collecting = True
 
             scanned += 1
-            matched.append(event.get("message"))
+            matched.append(event)
 
             if len(matched) >= max_messages:
                 break

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal Parsl script with Diaspora-backed debug logging."""
+"""Minimal Parsl hello-world script with retry policies and local/Aurora modes."""
 
 from __future__ import annotations
 
@@ -19,41 +19,77 @@ from parsl.monitoring import MonitoringHub
 from parsl.providers import PBSProProvider
 from parsl.retries.types import RetryDecision
 
-DIASPORA_FORMAT = "DIASPORA|%(levelname)s|%(name)s|%(funcName)s:%(lineno)d|%(message)s"
-DEFAULT_RETRY_BUDGET = 1
 LOCAL_MODE = "local"
 AURORA_MODE = "aurora"
-AURORA_ACCOUNT = "Diaspora"
 LOCAL_TOPIC = "topic-parsl-local"
 AURORA_TOPIC = "topic-parsl-aurora-debug"
+AURORA_ACCOUNT = "Diaspora"
 LOCAL_MONITORING_INTERVAL_SECONDS = 0.5
 AURORA_MONITORING_INTERVAL_SECONDS = 10
-SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_RETRY_BUDGET = 1
 RETRY_POLICY_ONCE = "once"
 RETRY_POLICY_LLM_MINIMAX = "llm-minimax"
 DEFAULT_MINIMAX_MODEL = "MiniMax-M2.5"
-
-retry_policy_logger = logging.getLogger("parsl.examples.minimal_tstring_probe.retry_policy")
-retry_llm_logger = logging.getLogger("parsl.examples.minimal_tstring_probe.retry_llm_policy")
-
-
-def retry_once_policy(_exception: Exception, task_record: dict[str, object]) -> float:
-    retry_policy_logger.warning("retry_once_policy task_record=%r", task_record)
-    fail_count = int(task_record.get("fail_count", 0))
-    if fail_count <= DEFAULT_RETRY_BUDGET:
-        return 1.0
-    return float(DEFAULT_RETRY_BUDGET + 1)
+SCRIPT_DIR = Path(__file__).resolve().parent
+DOTENV_PATH = SCRIPT_DIR / ".env"
 
 
-def build_retry_once_policy(retry_budget: int) -> Callable[[Exception, dict[str, object]], float]:
-    def retry_once_policy_for_budget(_exception: Exception, task_record: dict[str, object]) -> float:
-        retry_policy_logger.warning("retry_once_policy task_record=%r", task_record)
+def default_topic_for_mode(mode: str) -> str:
+    if mode == LOCAL_MODE:
+        return LOCAL_TOPIC
+    if mode == AURORA_MODE:
+        return AURORA_TOPIC
+    raise ValueError(f"Unsupported mode: {mode}")
+
+
+def build_retry_once_policy(retry_budget: int) -> Callable[[Exception, dict[str, object]], RetryDecision]:
+    def retry_once_policy(_exception: Exception, task_record: dict[str, object]) -> RetryDecision:
         fail_count = int(task_record.get("fail_count", 0))
         if fail_count <= retry_budget:
             return 1.0
         return float(retry_budget + 1)
 
-    return retry_once_policy_for_budget
+    return retry_once_policy
+
+
+def build_retry_llm_policy(topic: str, minimax_model: str) -> Callable[[Exception, dict[str, object]], RetryDecision]:
+    client = parsl.MiniMaxOpenAICompatClient()
+    return parsl.build_retry_llm_policy(
+        llm_client=client,
+        diaspora_topic=topic,
+        model=minimax_model,
+    )
+
+
+def load_minimax_api_key_from_dotenv(
+    *,
+    logger: logging.Logger,
+    log_extra: dict[str, object],
+    dotenv_path: Path = DOTENV_PATH,
+) -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError as exc:
+        raise RuntimeError(
+            "python-dotenv is required for --retry-policy llm-minimax. "
+            "Install with: pip install python-dotenv"
+        ) from exc
+
+    if not dotenv_path.exists():
+        logger.warning(
+            "dotenv file not found at %s; relying on existing environment variables.",
+            dotenv_path,
+            extra=log_extra,
+        )
+        return
+
+    load_dotenv(dotenv_path=dotenv_path, override=False)
+    logger.info(
+        "Loaded dotenv file from %s (MINIMAX_API_KEY present=%s)",
+        dotenv_path,
+        bool(os.environ.get("MINIMAX_API_KEY")),
+        extra=log_extra,
+    )
 
 
 def build_retry_handler(
@@ -65,30 +101,9 @@ def build_retry_handler(
 ) -> Callable[[Exception, dict[str, object]], RetryDecision]:
     if retry_policy == RETRY_POLICY_ONCE:
         return build_retry_once_policy(retry_budget)
-
     if retry_policy == RETRY_POLICY_LLM_MINIMAX:
-        client = parsl.MiniMaxOpenAICompatClient()
-        retry_llm_logger.info(
-            "Using LLM retry policy with MiniMax model=%s topic=%s",
-            minimax_model,
-            topic,
-        )
-        return parsl.build_retry_llm_policy(
-            llm_client=client,
-            diaspora_topic=topic,
-            model=minimax_model,
-            policy_logger=retry_llm_logger,
-        )
-
+        return build_retry_llm_policy(topic=topic, minimax_model=minimax_model)
     raise ValueError(f"Unsupported retry policy: {retry_policy}")
-
-
-def default_topic_for_mode(mode: str) -> str:
-    if mode == LOCAL_MODE:
-        return LOCAL_TOPIC
-    if mode == AURORA_MODE:
-        return AURORA_TOPIC
-    raise ValueError(f"Unsupported mode: {mode}")
 
 
 def make_monitoring_config(mode: str) -> MonitoringHub:
@@ -169,26 +184,15 @@ def make_aurora_config(
 
 def make_config_for_mode(
     mode: str,
-    logger: logging.Logger,
     retry_handler: Callable[[Exception, dict[str, object]], RetryDecision],
     retries: int,
 ) -> Config:
-    account = "n/a"
-    queue = "n/a"
     if mode == AURORA_MODE:
-        config, account, queue = make_aurora_config(retry_handler=retry_handler, retries=retries)
-    elif mode == LOCAL_MODE:
-        config = make_local_config(retry_handler=retry_handler, retries=retries)
-    else:
-        raise ValueError(f"Unsupported mode: {mode}")
-
-    logger.info(
-        "Execution profile selected: mode=%s account=%s queue=%s",
-        mode,
-        account,
-        queue,
-    )
-    return config
+        config, _, _ = make_aurora_config(retry_handler=retry_handler, retries=retries)
+        return config
+    if mode == LOCAL_MODE:
+        return make_local_config(retry_handler=retry_handler, retries=retries)
+    raise ValueError(f"Unsupported mode: {mode}")
 
 
 @python_app
@@ -199,19 +203,19 @@ def pep750_tstring_probe() -> object:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run Parsl with Diaspora-backed debug logging.")
+    parser = argparse.ArgumentParser(description="Run a minimal Parsl t-string hello-world app.")
     parser.add_argument(
         "--mode",
         choices=[LOCAL_MODE, AURORA_MODE],
         default=LOCAL_MODE,
         help="Execution mode: local thread pool or Aurora PBS.",
     )
-    parser.add_argument("--topic", default=None, help="Diaspora topic name.")
+    parser.add_argument("--topic", default=None, help="Diaspora topic name for LLM retry context.")
     parser.add_argument(
         "--retry-policy",
         choices=[RETRY_POLICY_ONCE, RETRY_POLICY_LLM_MINIMAX],
         default=RETRY_POLICY_ONCE,
-        help="Retry behavior: classic one-time retry or LLM runtime patching.",
+        help="Retry behavior: one-time retry or LLM runtime patching.",
     )
     parser.add_argument(
         "--minimax-model",
@@ -231,24 +235,31 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.retries < 0:
         raise ValueError("--retries must be >= 0")
+
     topic = args.topic or default_topic_for_mode(args.mode)
+    logger = logging.getLogger("parsl.examples.minimal_tstring_probe")
+    run_extra: dict[str, object] = {}
 
     close_stream_logger = parsl.set_stream_logger(name="parsl", level=logging.DEBUG)
     close_diaspora_logger = parsl.set_diaspora_logger(
         topic_name=topic,
         name="parsl",
         level=logging.DEBUG,
-        format_string=DIASPORA_FORMAT,
     )
-    logger = logging.getLogger("parsl.examples.minimal_tstring_probe")
 
     loaded = False
     try:
-        logger.info("If this is your first run, execute: python examples/diaspora/diaspora.py setup")
-        logger.info("Running with mode=%s and verbose debug logging.", args.mode)
-        logger.info("Resolved logging target topic=%s", topic)
-        logger.info("Retry policy selected: %s", args.retry_policy)
-        logger.info("Retry count selected: %s", args.retries)
+        logger.info(
+            "Launching minimal t-string probe with mode=%s retry_policy=%s retries=%d topic=%s",
+            args.mode,
+            args.retry_policy,
+            args.retries,
+            topic,
+            extra=run_extra,
+        )
+
+        if args.retry_policy == RETRY_POLICY_LLM_MINIMAX:
+            load_minimax_api_key_from_dotenv(logger=logger, log_extra=run_extra)
 
         retry_handler = build_retry_handler(
             retry_policy=args.retry_policy,
@@ -256,33 +267,58 @@ def main(argv: list[str] | None = None) -> int:
             minimax_model=args.minimax_model,
             retry_budget=args.retries,
         )
-
         config = make_config_for_mode(
             mode=args.mode,
-            logger=logger,
             retry_handler=retry_handler,
             retries=args.retries,
         )
 
         dfk = parsl.load(config)
         loaded = True
-        logger.info("Parsl loaded. run_id=%s", getattr(dfk, "run_id", "<unknown>"))
+        run_id = getattr(dfk, "run_id", None)
+        run_extra = {"run_id": run_id} if run_id is not None else {}
+        logger.info(
+            "Parsl loaded. run_id=%s",
+            run_id if run_id is not None else "<unknown>",
+            extra=run_extra,
+        )
 
         future = pep750_tstring_probe()
-        value = future.result()
-        logger.info("Task completed with value: %r", value)
+        task_id = getattr(future, "tid", None)
+        task_extra = dict(run_extra)
+        if task_id is not None:
+            task_extra["task_id"] = task_id
+        logger.info(
+            "Submitted pep750_tstring_probe task (task_id=%s)",
+            task_id if task_id is not None else "n/a",
+            extra=task_extra,
+        )
+
+        try:
+            value = future.result()
+            logger.info(
+                "Task completed with value: %r",
+                value,
+                extra=task_extra,
+            )
+            print(value)
+        except Exception:
+            logger.exception("Task failed", extra=task_extra)
+            raise
     finally:
         if loaded:
             parsl.clear()
+            logger.info("Parsl cleared", extra=run_extra)
 
         try:
             close_diaspora_logger()
         except Exception:
-            logger.exception("Failed to close Diaspora logger")
+            pass
+
         try:
             close_stream_logger()
         except Exception:
-            logger.exception("Failed to close stream logger")
+            pass
 
     return 0
 

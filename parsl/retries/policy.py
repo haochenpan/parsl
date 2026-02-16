@@ -207,31 +207,32 @@ def build_retry_llm_policy(
     def retry_llm_policy(exception: Exception, task_record: TaskRecord) -> RetryDecision:
         task_id = int(task_record["id"])
         run_id = str(task_record["dfk"].run_id)
+        try_id = int(task_record.get("try_id", 0))
         func_name = str(task_record.get("func_name", "<unknown>"))
+        exception_type = type(exception).__name__
+        log_context = {
+            "parsl_run_id": run_id,
+            "parsl_task_id": task_id,
+            "parsl_try_id": try_id,
+            "parsl_exception_type": exception_type,
+        }
+
+        def _context_json(**fields: Any) -> str:
+            return _pretty_json({**log_context, **fields})
 
         if not isinstance(exception, exception_types):
             active_logger.info(
-                "retry_llm_policy skipped LLM patch for exception type %s",
-                type(exception).__name__,
-                extra={
-                    "parsl_run_id": run_id,
-                    "parsl_task_id": task_id,
-                    "parsl_try_id": int(task_record.get("try_id", 0)),
-                    "parsl_exception_type": type(exception).__name__,
-                    "parsl_retry_llm_skipped": True,
-                },
+                "retry_llm_policy skipped LLM patch for exception type %s\n%s",
+                exception_type,
+                _context_json(parsl_retry_llm_skipped=True),
             )
             return 1.0
 
         patch_history = list(task_record.get("retry_patch_history", []))
         if len(patch_history) >= max_patch_attempts:
             active_logger.warning(
-                "retry_llm_policy patch budget exhausted",
-                extra={
-                    "parsl_run_id": run_id,
-                    "parsl_task_id": task_id,
-                    "parsl_retry_patch_attempts": len(patch_history),
-                },
+                "retry_llm_policy patch budget exhausted\n%s",
+                _context_json(parsl_retry_patch_attempts=len(patch_history)),
             )
             return _abort_cost(task_record)
 
@@ -274,7 +275,7 @@ def build_retry_llm_policy(
             ],
             "function_name": func_name,
             "original_function_source": original_source,
-            "exception_type": type(exception).__name__,
+            "exception_type": exception_type,
             "exception_message": str(exception),
             "exception_traceback": tb_text,
             "diaspora_context": diaspora_context,
@@ -284,24 +285,11 @@ def build_retry_llm_policy(
         active_logger.info(
             "Prepared LLM patch request for task %s\n%s",
             task_id,
-            _pretty_json(
-                {
-                    "parsl_run_id": run_id,
-                    "parsl_task_id": task_id,
-                    "parsl_try_id": int(task_record.get("try_id", 0)),
-                    "parsl_exception_type": type(exception).__name__,
-                    "parsl_retry_patch_model": model,
-                    "system_prompt": system_prompt,
-                    "user_prompt": user_prompt_payload,
-                }
-            ),
-            extra={
-                "parsl_run_id": run_id,
-                "parsl_task_id": task_id,
-                "parsl_try_id": int(task_record.get("try_id", 0)),
-                "parsl_exception_type": type(exception).__name__,
-                "parsl_retry_patch_model": model,
-            },
+            _context_json(
+                parsl_retry_patch_model=model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt_payload,
+            )
         )
 
         try:
@@ -328,35 +316,19 @@ def build_retry_llm_policy(
         metadata = {
             "model": model,
             "summary": payload.get("summary"),
-            "exception_type": type(exception).__name__,
+            "exception_type": exception_type,
             "diaspora_matched_count": diaspora_context.get("matched_count", 0),
         }
 
         active_logger.info(
-            (
-                "Generated runtime patch for task %s\n%s"
-            ),
+            "Generated runtime patch for task %s\n%s",
             task_id,
-            _pretty_json(
-                {
-                    "parsl_run_id": run_id,
-                    "parsl_task_id": task_id,
-                    "parsl_try_id": int(task_record.get("try_id", 0)),
-                    "parsl_exception_type": type(exception).__name__,
-                    "parsl_retry_patch_id": patch_id,
-                    "parsl_retry_patch_model": model,
-                    "retry_patch_metadata": metadata,
-                    "patched_function_source": patched_function_source,
-                }
-            ),
-            extra={
-                "parsl_run_id": run_id,
-                "parsl_task_id": task_id,
-                "parsl_try_id": int(task_record.get("try_id", 0)),
-                "parsl_exception_type": type(exception).__name__,
-                "parsl_retry_patch_id": patch_id,
-                "parsl_retry_patch_model": model,
-            },
+            _context_json(
+                parsl_retry_patch_id=patch_id,
+                parsl_retry_patch_model=model,
+                retry_patch_metadata=metadata,
+                patched_function_source=patched_function_source,
+            )
         )
 
         return RetryDirective(

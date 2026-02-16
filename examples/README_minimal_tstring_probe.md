@@ -1,16 +1,17 @@
-# Minimal T-String Probe Example
+# Minimal T-String Probe
 
 Script:
 - `examples/minimal_tstring_probe.py`
 
-This example runs one Parsl `python_app` with:
-- stream + Diaspora logging at `DEBUG`
-- monitoring enabled in both modes
-- configurable retry policy:
-  - `once`: retry budget accounting only
-  - `llm-minimax`: runtime patch generation via MiniMax M2.5
-- configurable retry budget via `--retries`
-- detailed patch diagnostics in stream logs when LLM patching is used
+This example is a minimal Parsl workflow with:
+- one `python_app` (`pep750_tstring_probe`)
+- two retry policies:
+  - `once`: retry-budget based
+  - `llm-minimax`: runtime patch retry via MiniMax
+- two execution modes:
+  - `local`
+  - `aurora`
+- monitoring config in both modes (`make_monitoring_config`)
 
 ## Prerequisites
 
@@ -22,76 +23,62 @@ python -m pip install -e ".[diaspora,monitoring]"
 python examples/diaspora/diaspora.py setup
 ```
 
-Note: keep the virtual environment activated for Aurora mode so HTEX helper scripts are available on `PATH`.
-
-## MiniMax LLM Retry Setup
-
-For `--retry-policy llm-minimax`, export your MiniMax API key:
+For `--retry-policy llm-minimax`, set:
 
 ```bash
 export MINIMAX_API_KEY="<your-key>"
 ```
 
-The example uses the OpenAI-compatible MiniMax endpoint through `requests`.
-
 ## Usage
 
-Run in local mode (classic retry):
+From repo root:
 
 ```bash
-python examples/minimal_tstring_probe.py --mode local --retry-policy once --retries 1
+cd /home/haochenpan/parsl/examples
 ```
 
-Run in local mode (LLM patch retry):
+Local + classic retry:
 
 ```bash
-python examples/minimal_tstring_probe.py \
+python minimal_tstring_probe.py --mode local --retry-policy once --retries 1
+```
+
+Local + LLM retry:
+
+```bash
+python minimal_tstring_probe.py \
   --mode local \
   --retry-policy llm-minimax \
   --minimax-model MiniMax-M2.5 \
   --retries 1
 ```
 
-Run in Aurora mode:
+Aurora:
 
 ```bash
-python examples/minimal_tstring_probe.py --mode aurora --retry-policy once --retries 1
+python minimal_tstring_probe.py --mode aurora --retry-policy once --retries 1
 ```
 
-Override topic:
+Aurora + LLM retry:
 
 ```bash
-python examples/minimal_tstring_probe.py --mode local --topic topic-parsl-local
+python minimal_tstring_probe.py \
+  --mode aurora \
+  --retry-policy llm-minimax \
+  --minimax-model MiniMax-M2.5 \
+  --retries 3
 ```
-
-## Defaults
-
-- local
-  - topic: `topic-parsl-local`
-  - monitoring interval: `0.5s`
-  - executor: `ThreadPoolExecutor(max_threads=1)`
-- aurora
-  - topic: `topic-parsl-aurora-debug`
-  - queue: `debug`
-  - nodes per block: `1`
-  - monitoring interval: `10s`
-- LLM retry
-  - model: `MiniMax-M2.5`
-  - trigger exceptions: `SyntaxError`, `NameError`, `ImportError`, `ModuleNotFoundError`
-  - patch generation log line includes JSON details:
-    - `Generated runtime patch for task ... details={...}`
-- retries
-  - default retry budget: `1` (settable with `--retries`)
 
 ## CLI Options
 
-- `--mode {local,aurora}`: execution backend.
-- `--topic`: optional Diaspora topic name.
-- `--retry-policy {once,llm-minimax}`: retry behavior.
-- `--minimax-model`: model for MiniMax OpenAI-compatible API.
-- `--retries`: retry budget/count passed to Parsl `Config.retries`.
+- `--mode {local,aurora}`
+- `--topic`
+- `--retry-policy {once,llm-minimax}`
+- `--minimax-model`
+- `--retries`
 
 ## Notes
 
-- Runtime patching is in-memory only. Source files are not modified.
-- Keep API keys out of shell history and rotate any key that was exposed.
+- The app intentionally executes `t"Hello {name}"` dynamically.
+- On Python runtimes without t-string support, this raises `SyntaxError` and exercises retry handling.
+- Runtime LLM patching is in-memory only; source files are not modified.

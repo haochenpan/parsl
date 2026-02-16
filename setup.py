@@ -47,7 +47,7 @@ extras_require = {
     'radical-pilot': ['radical.pilot==1.90', 'radical.utils==1.90'],
     'globus_compute': ['globus_compute_sdk>=2.34.0'],
     'globus_transfer': ['globus-sdk'],
-    'diaspora': ['diaspora-event-sdk', 'kafka-python'],
+    'diaspora': ['diaspora-event-sdk', 'kafka-python', 'python-dotenv'],
     # Disabling psi-j since github direct links are not allowed by pypi
     # 'psij': ['psi-j-parsl@git+https://github.com/ExaWorks/psi-j-parsl']
 }

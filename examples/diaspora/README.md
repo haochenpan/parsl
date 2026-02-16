@@ -49,7 +49,7 @@ python diaspora.py context --mode local
 python diaspora.py context --mode aurora
 
 # optionally filter by run_id
-python diaspora.py context --mode local --run_id 99f3d61b-58ab-4d8b-a004-bbfd1dbc43b9
+python diaspora.py context --mode aurora --run_id 99f3d61b-58ab-4d8b-a004-bbfd1dbc43b9
 
 # recreate topic + remove file
 python diaspora.py clear --mode local
