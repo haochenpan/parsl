@@ -4,6 +4,7 @@ import ast
 import inspect
 import json
 import logging
+import platform
 import re
 import textwrap
 import traceback
@@ -245,6 +246,12 @@ def build_retry_llm_policy(
             task_record["retry_patch_last_error"] = f"source-introspection failed: {exc}"
             return _abort_cost(task_record)
 
+        # Strip decorator lines so the LLM doesn't echo them back
+        source_lines = original_source.splitlines()
+        while source_lines and source_lines[0].lstrip().startswith("@"):
+            source_lines.pop(0)
+        original_source = "\n".join(source_lines)
+
         tb_text = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
 
         try:
@@ -261,20 +268,17 @@ def build_retry_llm_policy(
             return _abort_cost(task_record)
 
         system_prompt = (
-            "You are an expert Python assistant that fixes exactly one broken function. "
-            "Return strict JSON only with keys: patched_function_source, summary. "
-            "Do not include markdown fences."
+            "Fix the broken Python function. "
+            "Return JSON with keys: patched_function_source, summary. "
+            "patched_function_source must contain ONLY the bare function definition "
+            "(def ...), without any decorators such as @python_app. "
+            "No markdown fences."
         )
 
         user_prompt_payload = {
-            "task": "Patch a failed Parsl python_app function for immediate runtime retry.",
-            "constraints": [
-                "Preserve function name and signature when possible.",
-                "Return only valid Python function source.",
-                "Do not add external dependencies.",
-            ],
             "function_name": func_name,
             "original_function_source": original_source,
+            "python_version": platform.python_version(),
             "exception_type": exception_type,
             "exception_message": str(exception),
             "exception_traceback": tb_text,

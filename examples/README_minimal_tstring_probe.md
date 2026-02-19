@@ -23,11 +23,15 @@ python -m pip install -e ".[diaspora,monitoring]"
 python examples/diaspora/diaspora.py setup
 ```
 
-For `--retry-policy llm-minimax`, set:
+For `--retry-policy llm-minimax`, configure your key in `examples/.env`:
 
 ```bash
-export MINIMAX_API_KEY="<your-key>"
+cat > /home/haochenpan/parsl/examples/.env <<'EOF'
+MINIMAX_API_KEY="<your-key>"
+EOF
 ```
+
+`minimal_tstring_probe.py` loads `examples/.env` automatically before creating the MiniMax client.
 
 ## Usage
 
