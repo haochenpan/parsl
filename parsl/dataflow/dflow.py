@@ -10,7 +10,6 @@ import random
 import sys
 import threading
 import time
-import traceback
 from concurrent.futures import Future
 from functools import partial
 from getpass import getuser
@@ -303,23 +302,6 @@ class DataFlowKernel:
         """
         return self._config
 
-    def _log_retry_diagnostic(self, task_record: TaskRecord, exception: Exception) -> None:
-        tb_text = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
-        logger.info(
-            "Recorded retry diagnostics for task %s",
-            task_record["id"],
-            extra={
-                "parsl_run_id": self.run_id,
-                "parsl_task_id": int(task_record["id"]),
-                "parsl_try_id": int(task_record.get("try_id", 0)),
-                "parsl_func_name": str(task_record.get("func_name", "<unknown>")),
-                "parsl_exception_type": type(exception).__name__,
-                "parsl_exception_message": str(exception),
-                "parsl_exception_traceback": tb_text,
-                "parsl_fail_count": int(task_record.get("fail_count", 0)),
-            },
-        )
-
     def _normalize_retry_decision(self, decision: RetryDecision) -> RetryDirective:
         if isinstance(decision, RetryDirective):
             cost = float(decision.cost)
@@ -400,7 +382,6 @@ class DataFlowKernel:
             # tossed.
             task_record['fail_history'].append(repr(e))
             task_record['fail_count'] += 1
-            self._log_retry_diagnostic(task_record, e)
             if self._config.retry_handler:
                 try:
                     retry_decision = self._config.retry_handler(e, task_record)

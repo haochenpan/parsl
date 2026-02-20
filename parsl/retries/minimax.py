@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Mapping, MutableMapping, Optional
+from typing import Any, Optional
 
-import requests
+from openai import OpenAI
 
 
 class MiniMaxOpenAICompatClient:
-    """OpenAI-compatible text client for MiniMax chat completions."""
+    """OpenAI-compatible client for MiniMax (and any OpenAI-compatible API)."""
 
     def __init__(
         self,
@@ -15,15 +15,17 @@ class MiniMaxOpenAICompatClient:
         api_key: Optional[str] = None,
         base_url: str = "https://api.minimax.io/v1",
         request_timeout_s: float = 60.0,
-        session: Optional[requests.Session] = None,
+        client: Optional[Any] = None,
     ) -> None:
-        self.api_key = api_key or os.environ.get("MINIMAX_API_KEY")
-        if not self.api_key:
+        resolved_key = api_key or os.environ.get("MINIMAX_API_KEY")
+        if not resolved_key and client is None:
             raise ValueError("MINIMAX_API_KEY is required")
 
-        self.base_url = base_url.rstrip("/")
-        self.request_timeout_s = request_timeout_s
-        self.session = session or requests.Session()
+        self._timeout = request_timeout_s
+        self._client: OpenAI = client or OpenAI(
+            api_key=resolved_key,
+            base_url=base_url.rstrip("/"),
+        )
 
     def generate_patch(
         self,
@@ -36,36 +38,18 @@ class MiniMaxOpenAICompatClient:
         if temperature <= 0.0 or temperature > 1.0:
             raise ValueError("temperature must be in (0, 1]")
 
-        url = f"{self.base_url}/chat/completions"
-        headers: MutableMapping[str, str] = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload: Mapping[str, Any] = {
-            "model": model,
-            "messages": [
+        response = self._client.chat.completions.create(
+            model=model,
+            messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": temperature,
-            "n": 1,
-        }
+            temperature=temperature,
+            n=1,
+            timeout=self._timeout,
+        )
 
-        response = self.session.post(url, headers=headers, json=payload, timeout=self.request_timeout_s)
-        if response.status_code != 200:
-            body = response.text[:1000]
-            raise RuntimeError(f"MiniMax request failed with status={response.status_code}: {body}")
-
-        try:
-            data = response.json()
-        except Exception as exc:
-            raise RuntimeError("MiniMax response was not valid JSON") from exc
-
-        try:
-            content = data["choices"][0]["message"]["content"]
-        except Exception as exc:
-            raise RuntimeError("MiniMax response missing choices[0].message.content") from exc
-
+        content = response.choices[0].message.content
         if not isinstance(content, str):
             raise RuntimeError(f"MiniMax response content must be string, got {type(content)}")
 

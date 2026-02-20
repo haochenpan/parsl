@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Mapping, Union
+from typing import Any, Callable, Mapping, Union
 
 
 @dataclass(frozen=True)
@@ -23,4 +23,3 @@ class RetryDirective:
 
 
 RetryDecision = Union[float, RetryDirective]
-RetryPatchHistoryEntry = Dict[str, Any]
