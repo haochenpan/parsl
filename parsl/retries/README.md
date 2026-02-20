@@ -21,7 +21,7 @@ This feature adds:
 - `parsl/dataflow/dflow.py`: retry decision normalization and patch application.
 - `parsl/config.py`: retry handler typing widened to decision union.
 - `parsl/dataflow/taskrecord.py`: patch bookkeeping fields.
-- `examples/minimal_tstring_probe.py`: demo wiring with `once` and `llm-minimax`.
+- `examples/minimal_tstring_probe.py`: demo wiring with `budget` and `llm-minimax`.
 
 ## Public API Changes
 
@@ -123,7 +123,7 @@ Patch generation now logs detailed payload content in stream logs:
 
 Current example supports both old and new retry modes:
 
-1. `--retry-policy once`:
+1. `--retry-policy budget`:
    - classic cost-based retry, now parameterized by `--retries`
    - policy builder: `examples/minimal_tstring_probe.py:48`
 2. `--retry-policy llm-minimax`:

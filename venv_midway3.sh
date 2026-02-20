@@ -5,16 +5,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR="./venv"
-VENV_ALIAS="parsl-diaspora-$(date +%Y%m%d)"
-PYTHON_BIN="python3.10"
+VENV_ALIAS="parsl-midway3-$(date +%Y%m%d)"
+PYTHON_MODULE="python/3.11.9"
+PYTHON_BIN="python3"
 
-# Load Aurora frameworks module
-if ! command -v module >/dev/null 2>&1 && [ -f /etc/profile.d/modules.sh ]; then
-  # shellcheck source=/etc/profile.d/modules.sh
-  source /etc/profile.d/modules.sh
-fi
+# # Load modules init script (if needed), then load a Midway3 Python module.
+# if ! command -v module >/dev/null 2>&1 && [ -f /etc/profile.d/modules.sh ]; then
+#   # shellcheck source=/etc/profile.d/modules.sh
+#   source /etc/profile.d/modules.sh
+# fi
 if command -v module >/dev/null 2>&1; then
-  module load frameworks
+  module load "$PYTHON_MODULE"
 fi
 
 rm -rf "$VENV_DIR"

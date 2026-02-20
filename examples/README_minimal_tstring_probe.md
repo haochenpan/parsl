@@ -2,16 +2,18 @@
 
 Script:
 - `examples/minimal_tstring_probe.py`
+- `examples/config.py` (shared local/Aurora/Midway execution config)
 
 This example is a minimal Parsl workflow with:
 - one `python_app` (`pep750_tstring_probe`)
 - two retry policies:
-  - `once`: retry-budget based
+  - `budget`: retry-budget based
   - `llm-minimax`: runtime patch retry via MiniMax
-- two execution modes:
+- three execution modes:
   - `local`
   - `aurora`
-- monitoring config in both modes (`make_monitoring_config`)
+  - `midway` (Slurm)
+- monitoring config in all modes (`make_monitoring_config`)
 
 ## Prerequisites
 
@@ -44,7 +46,7 @@ cd /home/haochenpan/parsl/examples
 Local + classic retry:
 
 ```bash
-python minimal_tstring_probe.py --mode local --retry-policy once --retries 1
+python minimal_tstring_probe.py --mode local --retry-policy budget --retries 1
 ```
 
 Local + LLM retry:
@@ -53,14 +55,13 @@ Local + LLM retry:
 python minimal_tstring_probe.py \
   --mode local \
   --retry-policy llm-minimax \
-  --minimax-model MiniMax-M2.5 \
   --retries 1
 ```
 
 Aurora:
 
 ```bash
-python minimal_tstring_probe.py --mode aurora --retry-policy once --retries 1
+python minimal_tstring_probe.py --mode aurora --retry-policy budget --retries 1
 ```
 
 Aurora + LLM retry:
@@ -73,16 +74,35 @@ python minimal_tstring_probe.py \
   --retries 3
 ```
 
+Midway3 Slurm:
+
+```bash
+python minimal_tstring_probe.py \
+  --mode midway \
+  --retry-policy budget \
+  --retries 1
+```
+
+Midway3 Slurm + LLM retry:
+
+```bash
+python minimal_tstring_probe.py \
+  --mode midway \
+  --retry-policy llm-minimax \
+  --retries 3
+```
+
 ## CLI Options
 
-- `--mode {local,aurora}`
-- `--topic`
-- `--retry-policy {once,llm-minimax}`
-- `--minimax-model`
+- `--mode {local,aurora,midway}`
+- `--retry-policy {budget,llm-minimax}`
 - `--retries`
+- `--topic`
 
 ## Notes
 
 - The app intentionally executes `t"Hello {name}"` dynamically.
 - On Python runtimes without t-string support, this raises `SyntaxError` and exercises retry handling.
 - Runtime LLM patching is in-memory only; source files are not modified.
+- `--mode midway` uses `SlurmProvider` + `SrunLauncher` with hard-coded defaults:
+  account=`pi-chard`, partition=`caslake`, walltime=`00:10:00`, nodes_per_block=`1`, max_workers_per_node=`1`.
