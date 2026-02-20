@@ -64,6 +64,8 @@ def make_aurora_config(
     account: str = "Diaspora",
     queue: str = "debug",
     walltime: str = "00:15:00",
+    cpus_per_node: int = 1,
+    shared_node: bool = True,
 ) -> Config:
     from parsl.addresses import address_by_hostname
     from parsl.executors import HighThroughputExecutor
@@ -81,6 +83,11 @@ def make_aurora_config(
         worker_init_parts.append(f"source {venv}/bin/activate")
     worker_init = "; ".join(worker_init_parts)
 
+    scheduler_options_lines = ["#PBS -l filesystems=home:flare"]
+    if shared_node:
+        scheduler_options_lines.append("#PBS -l place=free:shared")
+    scheduler_options = "\n".join(scheduler_options_lines)
+
     config = Config(
         executors=[
             HighThroughputExecutor(
@@ -88,15 +95,18 @@ def make_aurora_config(
                 provider=PBSProProvider(
                     account=account,
                     queue=queue,
-                    scheduler_options="#PBS -l filesystems=home:flare",
+                    scheduler_options=scheduler_options,
                     select_options="",
                     worker_init=worker_init,
                     nodes_per_block=1,
-                    cpus_per_node=64,
+                    cpus_per_node=cpus_per_node,
                     init_blocks=1,
                     min_blocks=1,
                     max_blocks=1,
-                    launcher=MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
+                    launcher=MpiExecLauncher(
+                        bind_cmd="--cpu-bind",
+                        overrides=f"--depth={cpus_per_node} --ppn 1",
+                    ),
                     walltime=walltime,
                 ),
                 address=address_by_hostname(),
@@ -115,7 +125,7 @@ def make_midway_config(
     retry_handler: Callable[[Exception, dict[str, object]], RetryDecision],
     retries: int,
     account: str = "pi-chard",
-    partition: str = "build",
+    partition: str = "caslake",
     walltime: str = "00:15:00",
 ) -> Config:
     from parsl.addresses import address_by_hostname
@@ -129,7 +139,7 @@ def make_midway_config(
         "export TEMP=/tmp",
         "export TMP=/tmp",
         f"export PYTHONPATH={EXAMPLES_DIR}:${{PYTHONPATH:-}}",
-        "export OMP_NUM_THREADS=1",
+        # "export OMP_NUM_THREADS=1",
     ]
     if venv:
         worker_init_parts.insert(0, f"source {venv}/bin/activate")
@@ -148,6 +158,8 @@ def make_midway_config(
                     max_blocks=1,
                     walltime=walltime,
                     worker_init=worker_init,
+                    # Share nodes on Midway to reduce queue wait from full-node exclusivity.
+                    exclusive=False,
                     launcher=SrunLauncher(),
                 ),
                 address=address_by_hostname(),

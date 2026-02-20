@@ -91,5 +91,3 @@ python minimal_tstring_probe.py --config midway --retry-policy llm-minimax --ret
 - The app intentionally executes `t"Hello {name}"` dynamically.
 - On Python runtimes without t-string support, this raises `SyntaxError` and exercises retry handling.
 - Runtime LLM patching is in-memory only; source files are not modified.
-- `--config midway` uses `SlurmProvider` + `SrunLauncher` with hard-coded defaults:
-  account=`pi-chard`, partition=`caslake`, walltime=`00:10:00`, nodes_per_block=`1`, max_workers_per_node=`1`.
