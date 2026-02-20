@@ -26,6 +26,7 @@ def build_retry_handler(
     retry_budget: int,
     topic: str,
     time_horizon: int,
+    logger: logging.Logger,
 ) -> Callable[[Exception, dict[str, object]], RetryDecision]:
     if retry_policy == RETRY_POLICY_BUDGET:
         def retry_budget_policy(_exception: Exception, task_record: dict[str, object]) -> RetryDecision:
@@ -40,6 +41,7 @@ def build_retry_handler(
             llm_client= parsl.MiniMaxOpenAICompatClient(),
             diaspora_topic=topic,
             diaspora_time_horizon=time_horizon,
+            policy_logger=logger,
         )
     raise ValueError(f"Unsupported retry policy: {retry_policy}")
 
@@ -112,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             retry_budget=args.retries,
             topic=topic,
             time_horizon=diaspora_time_horizon,
+            logger=logger,
         )
         config = make_config_for_mode(
             mode=args.config,

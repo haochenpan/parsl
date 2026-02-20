@@ -61,14 +61,14 @@ def make_local_config(
 def make_aurora_config(
     retry_handler: Callable[[Exception, dict[str, object]], RetryDecision],
     retries: int,
+    account: str = "Diaspora",
+    queue: str = "debug",
+    walltime: str = "00:15:00",
 ) -> Config:
     from parsl.addresses import address_by_hostname
     from parsl.executors import HighThroughputExecutor
     from parsl.launchers import MpiExecLauncher
     from parsl.providers import PBSProProvider
-
-    account = "Diaspora"
-    queue = "debug"
 
     venv = os.environ.get("VIRTUAL_ENV")
     worker_init_parts = [
@@ -85,22 +85,22 @@ def make_aurora_config(
         executors=[
             HighThroughputExecutor(
                 label="aurora_htex",
-                address=address_by_hostname(),
-                worker_debug=True,
                 provider=PBSProProvider(
                     account=account,
                     queue=queue,
-                    walltime="00:15:00",
-                    worker_init=worker_init,
                     scheduler_options="#PBS -l filesystems=home:flare",
-                    launcher=MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
                     select_options="",
+                    worker_init=worker_init,
                     nodes_per_block=1,
                     cpus_per_node=64,
                     init_blocks=1,
                     min_blocks=1,
                     max_blocks=1,
+                    launcher=MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
+                    walltime=walltime,
                 ),
+                address=address_by_hostname(),
+                worker_debug=True,
             )
         ],
         monitoring=make_monitoring_config(mode=AURORA_MODE),
@@ -114,17 +114,20 @@ def make_aurora_config(
 def make_midway_config(
     retry_handler: Callable[[Exception, dict[str, object]], RetryDecision],
     retries: int,
+    account: str = "pi-chard",
+    partition: str = "build",
+    walltime: str = "00:15:00",
 ) -> Config:
     from parsl.addresses import address_by_hostname
     from parsl.executors import HighThroughputExecutor
     from parsl.launchers import SrunLauncher
     from parsl.providers import SlurmProvider
 
-    account = "pi-chard"
-    partition = "caslake"
-
     venv = os.environ.get("VIRTUAL_ENV")
     worker_init_parts = [
+        "export TMPDIR=/tmp",
+        "export TEMP=/tmp",
+        "export TMP=/tmp",
         f"export PYTHONPATH={EXAMPLES_DIR}:${{PYTHONPATH:-}}",
         "export OMP_NUM_THREADS=1",
     ]
@@ -136,20 +139,20 @@ def make_midway_config(
         executors=[
             HighThroughputExecutor(
                 label="midway3_htex",
-                address=address_by_hostname(),
-                max_workers_per_node=1,
-                worker_debug=True,
                 provider=SlurmProvider(
                     partition=partition,
                     account=account,
-                    launcher=SrunLauncher(),
                     nodes_per_block=1,
                     init_blocks=1,
                     min_blocks=1,
                     max_blocks=1,
-                    walltime="00:10:00",
+                    walltime=walltime,
                     worker_init=worker_init,
+                    launcher=SrunLauncher(),
                 ),
+                address=address_by_hostname(),
+                worker_debug=True,
+                max_workers_per_node=1,
             )
         ],
         monitoring=make_monitoring_config(mode=MIDWAY_MODE),

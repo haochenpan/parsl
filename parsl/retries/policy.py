@@ -74,25 +74,19 @@ def build_retry_llm_policy(
 
     def retry_llm_policy(exception: Exception, task_record: TaskRecord) -> RetryDecision:
         task_id = int(task_record["id"])
-        run_id = str(task_record["dfk"].run_id)
         try_id = int(task_record.get("try_id", 0))
         func_name = str(task_record.get("func_name", "<unknown>"))
         exception_type = type(exception).__name__
         tb_text = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
 
-        log_extra = {
-            "parsl_run_id": run_id,
-            "parsl_task_id": task_id,
-            "parsl_try_id": try_id,
-            "parsl_func_name": func_name,
-            "parsl_exception_type": exception_type,
-        }
-
         if not isinstance(exception, exception_types):
             active_logger.info(
                 "retry_llm_policy skipped LLM patch for non-allowlisted exception type %s",
                 exception_type,
-                extra={**log_extra, "parsl_retry_llm_skipped": True},
+                extra={
+                    "exception": exception,
+                    "task_record": task_record,
+                },
             )
             return 1.0
 
@@ -102,10 +96,8 @@ def build_retry_llm_policy(
             task_id,
             try_id,
             extra={
-                **log_extra,
-                "parsl_exception_message": str(exception),
-                "parsl_exception_traceback": tb_text,
-                "parsl_fail_count": int(task_record.get("fail_count", 0)),
+                "exception": exception,
+                "task_record": task_record,
             },
         )
 
@@ -115,7 +107,10 @@ def build_retry_llm_policy(
                 "retry_llm_policy patch budget exhausted (%s/%s)",
                 len(patch_history),
                 max_patch_attempts,
-                extra=log_extra,
+                extra={
+                    "exception": exception,
+                    "task_record": task_record,
+                },
             )
             return _get_abort_cost(task_record)
 
@@ -124,7 +119,14 @@ def build_retry_llm_policy(
         try:
             original_source = inspect.getsource(original_function)
         except Exception as exc:
-            active_logger.exception("Could not get source for function %s", func_name, extra=log_extra)
+            active_logger.exception(
+                "Could not get source for function %s",
+                func_name,
+                extra={
+                    "exception": exception,
+                    "task_record": task_record,
+                },
+            )
             task_record["retry_patch_last_error"] = f"source-introspection failed: {exc}"
             return _get_abort_cost(task_record)
 
@@ -143,7 +145,13 @@ def build_retry_llm_policy(
                 environment=environment,
             )
         except Exception as exc:
-            active_logger.exception("Failed to gather Diaspora retry context", extra=log_extra)
+            active_logger.exception(
+                "Failed to gather Diaspora retry context",
+                extra={
+                    "exception": exception,
+                    "task_record": task_record,
+                },
+            )
             task_record["retry_patch_last_error"] = f"diaspora-context failed: {exc}"
             return _get_abort_cost(task_record)
 
@@ -169,7 +177,12 @@ def build_retry_llm_policy(
         active_logger.info(
             "Sending LLM patch request for task %s",
             task_id,
-            extra={**log_extra, "parsl_retry_patch_model": model},
+            extra={
+                "exception": exception,
+                "task_record": task_record,
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+            },
         )
 
         try:
@@ -188,7 +201,13 @@ def build_retry_llm_policy(
             )
             patched_wrapped = wrap_error(patched_raw)
         except Exception as exc:
-            active_logger.exception("LLM patch generation failed", extra=log_extra)
+            active_logger.exception(
+                "LLM patch generation failed",
+                extra={
+                    "exception": exception,
+                    "task_record": task_record,
+                },
+            )
             task_record["retry_patch_last_error"] = f"llm-patch failed: {exc}"
             return _get_abort_cost(task_record)
 
@@ -205,9 +224,9 @@ def build_retry_llm_policy(
             patch_id,
             task_id,
             extra={
-                **log_extra,
-                "parsl_retry_patch_id": patch_id,
-                "parsl_retry_patch_model": model,
+                "exception": exception,
+                "task_record": task_record,
+                "patch": patched_function_source,
             },
         )
 
