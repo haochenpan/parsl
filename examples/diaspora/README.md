@@ -44,12 +44,9 @@ python diaspora.py failure --scenario python-missing-module --mode local
 python diaspora.py failure --scenario python-pep750-t-string --mode local
 python diaspora.py failure --scenario python-chain --mode local
 
-# fetch retry context messages (all runs)
-python diaspora.py context --mode local
-python diaspora.py context --mode aurora
-
-# optionally filter by run_id
-python diaspora.py context --mode aurora --run_id 73926c08-7db4-4fde-b865-fc910dcc5434
+# fetch retry context messages from a given timestamp (unix epoch ms)
+python diaspora.py context --mode local --time-horizon 1700000000000
+python diaspora.py context --mode aurora --time-horizon 1700000000000
 
 # recreate topic + remove file
 python diaspora.py clear --mode local

@@ -75,10 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     failure_parser.set_defaults(handler=run_failure_scenario)
 
-    context_parser = subparsers.add_parser("context", help="Fetch context events (optionally filtered by run_id).")
+    context_parser = subparsers.add_parser("context", help="Fetch context events from a given timestamp.")
     _add_mode_option(context_parser, "Default topic profile when --topic is omitted.")
     context_parser.add_argument("--topic", default=None, help="Diaspora topic name without namespace.")
-    context_parser.add_argument("--run_id", default=None, help="Optional Parsl run_id to filter on.")
+    context_parser.add_argument("--time-horizon", type=int, required=True, help="Unix-epoch millisecond timestamp to start reading from.")
     context_parser.add_argument(
         "--timeout-ms",
         type=int,

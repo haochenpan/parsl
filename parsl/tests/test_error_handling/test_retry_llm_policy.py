@@ -32,6 +32,7 @@ def test_retry_llm_policy_non_allowlisted_exception(monkeypatch):
     policy = build_retry_llm_policy(
         llm_client=client,
         diaspora_topic="topic-parsl-local",
+        diaspora_time_horizon=0,
     )
 
     task_record = {
@@ -70,6 +71,7 @@ def test_retry_llm_policy_allowlisted_exception_with_patch(monkeypatch):
     policy = build_retry_llm_policy(
         llm_client=FakeClient(),
         diaspora_topic="topic-parsl-local",
+        diaspora_time_horizon=0,
     )
 
     task_record = {
@@ -107,6 +109,7 @@ def test_retry_llm_policy_parses_fenced_python_response(monkeypatch):
     policy = build_retry_llm_policy(
         llm_client=FakeClient(),
         diaspora_topic="topic-parsl-local",
+        diaspora_time_horizon=0,
     )
 
     task_record = {
@@ -143,6 +146,7 @@ def test_retry_llm_policy_diaspora_failure_aborts(monkeypatch):
     policy = build_retry_llm_policy(
         llm_client=client,
         diaspora_topic="topic-parsl-local",
+        diaspora_time_horizon=0,
     )
 
     task_record = {

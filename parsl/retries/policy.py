@@ -37,6 +37,7 @@ def build_retry_llm_policy(
     *,
     llm_client: LLMRetryClient,
     diaspora_topic: str,
+    diaspora_time_horizon: int,
     model: str = "MiniMax-M2.5",
     allowlisted_exceptions: Optional[Sequence[Type[BaseException]]] = None,
     max_patch_attempts: int = 1,
@@ -50,6 +51,9 @@ def build_retry_llm_policy(
     """Build a retry handler that asks an LLM for a patched callable.
 
     Args:
+        diaspora_time_horizon: Unix-epoch millisecond timestamp. Events from
+            this point forward are fetched as retry context. Should be
+            captured before the diaspora logger is created.
         abort_cost: Cost to assign when the policy gives up (e.g. diaspora
             failure, source introspection failure, budget exhausted). When
             ``None`` (default), falls back to ``config.retries + 1`` which
@@ -133,7 +137,7 @@ def build_retry_llm_policy(
         try:
             diaspora_context = fetch_diaspora_context(
                 topic_name=diaspora_topic,
-                run_id=run_id,
+                time_horizon=diaspora_time_horizon,
                 timeout_ms=diaspora_timeout_ms,
                 max_messages=diaspora_max_messages,
                 environment=environment,
@@ -193,7 +197,7 @@ def build_retry_llm_policy(
             "model": model,
             "summary": payload.get("summary"),
             "exception_type": exception_type,
-            "diaspora_matched_count": diaspora_context.get("matched_count", 0),
+            "diaspora_event_count": diaspora_context.get("event_count", 0),
         }
 
         active_logger.info(

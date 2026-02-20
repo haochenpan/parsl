@@ -2,83 +2,30 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def _collect_tail_records(consumer: Any, *, max_messages: int, timeout_ms: int) -> List[Any]:
-    """Collect at most *max_messages* from the tail of each partition.
-
-    Seeks each assigned partition to ``max(beginning, end - max_messages)``
-    then polls once with the full timeout to read up to that end offset.
-    """
-    if max_messages <= 0:
-        return []
-
-    # Wait for partition assignment (up to 3 short polls).
-    topic_partitions: List[Any] = []
-    for _ in range(3):
-        consumer.poll(timeout_ms=min(timeout_ms, 1000))
-        topic_partitions = list(consumer.assignment())
-        if topic_partitions:
-            break
-    if not topic_partitions:
-        return []
-
-    end_offsets = consumer.end_offsets(topic_partitions)
-    beginning_offsets = consumer.beginning_offsets(topic_partitions)
-
-    if logger.isEnabledFor(logging.DEBUG):
-        offset_info = {
-            f"{tp.topic}:{tp.partition}": {
-                "beginning": int(beginning_offsets.get(tp, 0)),
-                "end": int(end_offsets.get(tp, 0)),
-            }
-            for tp in topic_partitions
-        }
-        logger.debug("Diaspora offsets: %s", json.dumps(offset_info, sort_keys=True))
-
-    # Seek each partition to at most max_messages before the end.
-    for partition in topic_partitions:
-        begin = int(beginning_offsets.get(partition, 0))
-        end = int(end_offsets.get(partition, 0))
-        consumer.seek(partition, max(begin, end - max_messages))
-
-    # Single poll to read everything from the seek point to end.
-    records: List[Any] = []
-    polled = consumer.poll(timeout_ms=timeout_ms, max_records=max_messages)
-    for partition_records in polled.values():
-        records.extend(partition_records)
-
-    records.sort(
-        key=lambda r: (
-            int(getattr(r, "timestamp", -1) or -1),
-            int(getattr(r, "partition", -1) or -1),
-            int(getattr(r, "offset", -1) or -1),
-        )
-    )
-    return records[-max_messages:] if len(records) > max_messages else records
-
-
 def fetch_diaspora_context(
     *,
     topic_name: str,
-    run_id: Optional[str] = None,
+    time_horizon: int,
     timeout_ms: int = 30000,
-    max_messages: int = 100,
+    max_messages: int = 10000,
     environment: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Fetch and normalize retry context from a Diaspora topic.
+    """Fetch retry context from a Diaspora topic starting at a unix timestamp.
 
-    When run_id is provided, collection starts at the first event whose
-    ``run_id`` matches. That matching event and all following events are
-    returned.
+    For each partition, seeks to the offset corresponding to *time_horizon*
+    (a unix-epoch **millisecond** timestamp) and replays all messages from
+    that point forward.
+
+    Returns a dict with topic metadata and a list of decoded events.
     """
-
     try:
-        from diaspora_event_sdk import Client
-        from diaspora_event_sdk import KafkaConsumer
+        from diaspora_event_sdk import Client, KafkaConsumer
     except Exception as exc:
         raise RuntimeError("diaspora_event_sdk is required for Diaspora context") from exc
 
@@ -92,41 +39,78 @@ def fetch_diaspora_context(
         enable_auto_commit=False,
     )
 
-    tail_limit = max(0, int(max_messages))
-    scanned = 0
-    matched: List[Any] = []
+    events: List[Dict[str, Any]] = []
 
     try:
-        tail_records = _collect_tail_records(
-            consumer,
-            max_messages=tail_limit,
-            timeout_ms=timeout_ms,
-        )
-        started_collecting = run_id is None
-        for record in tail_records:
-            try:
-                value = json.loads(record.value.decode("utf-8", errors="replace"))
-            except Exception:
-                continue
-            event = dict(value)
+        # Wait for partition assignment (up to 3 short polls).
+        topic_partitions: List[Any] = []
+        for _ in range(3):
+            consumer.poll(timeout_ms=min(timeout_ms, 1000))
+            topic_partitions = list(consumer.assignment())
+            if topic_partitions:
+                break
+        if not topic_partitions:
+            logger.warning("No partitions assigned for topic %s", kafka_topic)
+            return {"kafka_topic": kafka_topic, "events": []}
 
-            if run_id is not None and not started_collecting:
-                if str(event.get("run_id", "")) != run_id:
-                    continue
-                started_collecting = True
+        # Map each partition to the target timestamp for offset lookup.
+        timestamp_map = {tp: time_horizon for tp in topic_partitions}
+        offset_map = consumer.offsets_for_times(timestamp_map)
 
-            scanned += 1
-            matched.append(event)
+        end_offsets = consumer.end_offsets(topic_partitions)
 
-            if len(matched) >= max_messages:
+        for tp in topic_partitions:
+            offset_and_ts = offset_map.get(tp)
+            if offset_and_ts is not None:
+                consumer.seek(tp, offset_and_ts.offset)
+            else:
+                # No message at or after the timestamp — seek to end (nothing to read).
+                consumer.seek(tp, int(end_offsets.get(tp, 0)))
+
+        if logger.isEnabledFor(logging.DEBUG):
+            seek_info = {
+                f"{tp.topic}:{tp.partition}": {
+                    "seek_offset": offset_map.get(tp).offset if offset_map.get(tp) else "end",
+                    "end_offset": int(end_offsets.get(tp, 0)),
+                }
+                for tp in topic_partitions
+            }
+            logger.debug("Diaspora seek info: %s", json.dumps(seek_info, sort_keys=True))
+
+        # Poll until caught up to end offsets or timeout.
+        deadline = time.monotonic() + (max(timeout_ms, 0) / 1000.0)
+        while time.monotonic() < deadline:
+            remaining_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
+            polled = consumer.poll(timeout_ms=min(remaining_ms, 1000), max_records=max_messages)
+            for partition_records in polled.values():
+                for record in partition_records:
+                    try:
+                        value = json.loads(record.value.decode("utf-8", errors="replace"))
+                    except Exception:
+                        continue
+                    events.append(dict(value))
+
+            if len(events) >= max_messages:
+                events = events[:max_messages]
+                break
+
+            caught_up = all(
+                consumer.position(tp) >= int(end_offsets.get(tp, 0))
+                for tp in topic_partitions
+            )
+            if caught_up:
                 break
     finally:
         consumer.close()
 
+    logger.debug(
+        "Diaspora context: topic=%s time_horizon=%d events=%d",
+        kafka_topic, time_horizon, len(events),
+    )
+
     return {
         "kafka_topic": kafka_topic,
-        "run_id": run_id,
-        "scanned": scanned,
-        "matched_count": len(matched),
-        "events": matched,
+        "time_horizon": time_horizon,
+        "event_count": len(events),
+        "events": events,
     }

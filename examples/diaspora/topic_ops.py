@@ -43,7 +43,7 @@ def run_context(args) -> int:
 
     context = fetch_diaspora_context(
         topic_name=topic,
-        run_id=args.run_id,
+        time_horizon=args.time_horizon,
         timeout_ms=args.timeout_ms,
         max_messages=args.max_messages,
         environment=args.environment,

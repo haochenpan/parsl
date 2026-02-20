@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -52,11 +53,12 @@ def build_retry_once_policy(retry_budget: int) -> Callable[[Exception, dict[str,
     return retry_once_policy
 
 
-def build_retry_llm_policy(topic: str, minimax_model: str) -> Callable[[Exception, dict[str, object]], RetryDecision]:
+def build_retry_llm_policy(topic: str, minimax_model: str, time_horizon: int) -> Callable[[Exception, dict[str, object]], RetryDecision]:
     client = parsl.MiniMaxOpenAICompatClient()
     return parsl.build_retry_llm_policy(
         llm_client=client,
         diaspora_topic=topic,
+        diaspora_time_horizon=time_horizon,
         model=minimax_model,
     )
 
@@ -98,11 +100,12 @@ def build_retry_handler(
     topic: str,
     minimax_model: str,
     retry_budget: int,
+    time_horizon: int,
 ) -> Callable[[Exception, dict[str, object]], RetryDecision]:
     if retry_policy == RETRY_POLICY_ONCE:
         return build_retry_once_policy(retry_budget)
     if retry_policy == RETRY_POLICY_LLM_MINIMAX:
-        return build_retry_llm_policy(topic=topic, minimax_model=minimax_model)
+        return build_retry_llm_policy(topic=topic, minimax_model=minimax_model, time_horizon=time_horizon)
     raise ValueError(f"Unsupported retry policy: {retry_policy}")
 
 
@@ -240,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     logger = logging.getLogger("parsl.examples.minimal_tstring_probe")
     run_extra: dict[str, object] = {}
 
+    diaspora_time_horizon = int(time.time() * 1000)
     close_stream_logger = parsl.set_stream_logger(name="parsl", level=logging.DEBUG)
     close_diaspora_logger = parsl.set_diaspora_logger(
         topic_name=topic,
@@ -266,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
             topic=topic,
             minimax_model=args.minimax_model,
             retry_budget=args.retries,
+            time_horizon=diaspora_time_horizon,
         )
         config = make_config_for_mode(
             mode=args.mode,

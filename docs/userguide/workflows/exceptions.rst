@@ -187,13 +187,19 @@ Example using the built-in policy builder:
 
 .. code-block:: python
 
+     import time
+
      import parsl
      from parsl.config import Config
+
+     diaspora_time_horizon = int(time.time() * 1000)
+     # set up diaspora logger after capturing the timestamp ...
 
      llm_client = parsl.MiniMaxOpenAICompatClient()  # requires MINIMAX_API_KEY
      retry_handler = parsl.build_retry_llm_policy(
           llm_client=llm_client,
           diaspora_topic="topic-parsl-local",
+          diaspora_time_horizon=diaspora_time_horizon,
           model="MiniMax-M2.5",
      )
 
