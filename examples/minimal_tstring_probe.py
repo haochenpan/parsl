@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal Parsl hello-world script with retry policies and local/Aurora/Midway modes."""
+"""Minimal Parsl hello-world script with retry policies and local/Aurora/Midway configs."""
 
 from __future__ import annotations
 
@@ -54,10 +54,10 @@ def pep750_tstring_probe() -> object:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a minimal Parsl t-string hello-world app.")
     parser.add_argument(
-        "--mode",
+        "--config",
         choices=[LOCAL_MODE, AURORA_MODE, MIDWAY_MODE],
         default=LOCAL_MODE,
-        help="Execution mode: local thread pool, Aurora PBS, or Midway3 Slurm.",
+        help="Execution config: local thread pool, Aurora PBS, or Midway3 Slurm.",
     )
     parser.add_argument(
         "--retry-policy",
@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.retries < 0:
         raise ValueError("--retries must be >= 0")
 
-    topic = args.topic or default_topic_for_mode(args.mode)
+    topic = args.topic or default_topic_for_mode(args.config)
     logger = logging.getLogger("parsl.examples.minimal_tstring_probe")
     run_extra: dict[str, object] = {}
 
@@ -96,8 +96,8 @@ def main(argv: list[str] | None = None) -> int:
     loaded = False
     try:
         logger.info(
-            "Launching minimal t-string probe with mode=%s retry_policy=%s retries=%d topic=%s",
-            args.mode,
+            "Launching minimal t-string probe with config=%s retry_policy=%s retries=%d topic=%s",
+            args.config,
             args.retry_policy,
             args.retries,
             topic,
@@ -114,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             time_horizon=diaspora_time_horizon,
         )
         config = make_config_for_mode(
-            mode=args.mode,
+            mode=args.config,
             retry_handler=retry_handler,
             retries=args.retries,
         )

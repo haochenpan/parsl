@@ -124,7 +124,10 @@ def make_midway_config(
     partition = "caslake"
 
     venv = os.environ.get("VIRTUAL_ENV")
-    worker_init_parts = ["export OMP_NUM_THREADS=1"]
+    worker_init_parts = [
+        f"export PYTHONPATH={EXAMPLES_DIR}:${{PYTHONPATH:-}}",
+        "export OMP_NUM_THREADS=1",
+    ]
     if venv:
         worker_init_parts.insert(0, f"source {venv}/bin/activate")
     worker_init = "; ".join(worker_init_parts)

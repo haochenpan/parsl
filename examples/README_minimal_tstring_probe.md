@@ -46,55 +46,42 @@ cd /home/haochenpan/parsl/examples
 Local + classic retry:
 
 ```bash
-python minimal_tstring_probe.py --mode local --retry-policy budget --retries 1
+python minimal_tstring_probe.py --config local --retry-policy budget --retries 1
 ```
 
 Local + LLM retry:
 
 ```bash
-python minimal_tstring_probe.py \
-  --mode local \
-  --retry-policy llm-minimax \
-  --retries 1
+python minimal_tstring_probe.py --config local --retry-policy llm-minimax --retries 1
 ```
 
 Aurora:
 
 ```bash
-python minimal_tstring_probe.py --mode aurora --retry-policy budget --retries 1
+python minimal_tstring_probe.py --config aurora --retry-policy budget --retries 1
 ```
 
 Aurora + LLM retry:
 
 ```bash
-python minimal_tstring_probe.py \
-  --mode aurora \
-  --retry-policy llm-minimax \
-  --minimax-model MiniMax-M2.5 \
-  --retries 3
+python minimal_tstring_probe.py --config aurora --retry-policy llm-minimax --minimax-model MiniMax-M2.5 --retries 3
 ```
 
 Midway3 Slurm:
 
 ```bash
-python minimal_tstring_probe.py \
-  --mode midway \
-  --retry-policy budget \
-  --retries 1
+python minimal_tstring_probe.py --config midway --retry-policy budget --retries 1
 ```
 
 Midway3 Slurm + LLM retry:
 
 ```bash
-python minimal_tstring_probe.py \
-  --mode midway \
-  --retry-policy llm-minimax \
-  --retries 3
+python minimal_tstring_probe.py --config midway --retry-policy llm-minimax --retries 3
 ```
 
 ## CLI Options
 
-- `--mode {local,aurora,midway}`
+- `--config {local,aurora,midway}`
 - `--retry-policy {budget,llm-minimax}`
 - `--retries`
 - `--topic`
@@ -104,5 +91,5 @@ python minimal_tstring_probe.py \
 - The app intentionally executes `t"Hello {name}"` dynamically.
 - On Python runtimes without t-string support, this raises `SyntaxError` and exercises retry handling.
 - Runtime LLM patching is in-memory only; source files are not modified.
-- `--mode midway` uses `SlurmProvider` + `SrunLauncher` with hard-coded defaults:
+- `--config midway` uses `SlurmProvider` + `SrunLauncher` with hard-coded defaults:
   account=`pi-chard`, partition=`caslake`, walltime=`00:10:00`, nodes_per_block=`1`, max_workers_per_node=`1`.
