@@ -1,25 +1,9 @@
 # Diaspora Examples CLI
 
-This directory now uses a single entrypoint CLI:
+This directory uses a single entrypoint CLI:
 
-- `diaspora.py`: unified command surface for setup, workflows, failures, context, and clear.
-- `config.py`: shared constants/defaults and local/Aurora Parsl config builders.
-- `runtime.py`: shared logging/config/Parsl runtime helpers.
-- `workflows.py`: hello-world and Monte Carlo Pi workflows.
-- `failures.py`: unified failure scenario engine.
+- `diaspora.py`: command surface for setup, context, and clear.
 - `topic_ops.py`: setup/context/clear handlers.
-
-## Defaults
-
-- `local`
-  - topic: `topic-parsl-local`
-  - log file: `parsl-local.log`
-- `aurora`
-  - topic: `topic-parsl-aurora-debug`
-  - log file: `parsl-aurora-debug.log`
-  - queue selection by `--count`:
-    - `count` 1 or 2 -> `debug`
-    - otherwise -> `debug-scaling`
 
 ## Usage
 
@@ -30,26 +14,12 @@ cd examples/diaspora
 # one-time setup
 python diaspora.py setup
 
-# hello workflow
-python diaspora.py hello-world --mode local --count 3
-python diaspora.py hello-world --mode aurora --count 3
+# fetch context messages from the last 24 hours
+python diaspora.py context --time-horizon $(( ($(date +%s) - 86400) * 1000 ))
 
-# Monte Carlo Pi workflow
-python diaspora.py monte-carlo --mode local --count 3
-python diaspora.py monte-carlo --mode aurora --count 3
+# fetch context messages from the last 5 minutes
+python diaspora.py context --time-horizon $(( ($(date +%s) - 300) * 1000 ))
 
-# failure scenarios
-python diaspora.py failure --scenario python-div-zero --mode local
-python diaspora.py failure --scenario python-missing-module --mode local
-python diaspora.py failure --scenario python-pep750-t-string --mode local
-python diaspora.py failure --scenario python-chain --mode local
-
-# fetch retry context messages from a given timestamp (unix epoch ms)
-python diaspora.py context --mode local --time-horizon 1700000000000
-python diaspora.py context --mode aurora --time-horizon 1700000000000
-
-# recreate topic + remove file
-python diaspora.py clear --mode local
-python diaspora.py clear --mode aurora
-python diaspora.py clear --topic my-topic --log-file my.log
+# recreate topic
+python diaspora.py clear --topic my-topic
 ```
