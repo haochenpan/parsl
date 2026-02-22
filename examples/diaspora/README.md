@@ -1,9 +1,6 @@
 # Diaspora Examples CLI
 
-This directory uses a single entrypoint CLI:
-
-- `diaspora.py`: command surface for setup, context, and clear.
-- `topic_ops.py`: setup/context/clear handlers.
+Single-file CLI: `diaspora.py` (setup, context, and clear).
 
 ## Usage
 
@@ -15,11 +12,14 @@ cd examples/diaspora
 python diaspora.py setup
 
 # fetch context messages from the last 24 hours
-python diaspora.py context --time-horizon $(( ($(date +%s) - 86400) * 1000 ))
+python diaspora.py context --topic topic-parsl-local --time-horizon $(( ($(date +%s) - 86400) * 1000 ))
+
+# fetch context messages from the last hour
+python diaspora.py context --topic topic-parsl-local --time-horizon $(( ($(date +%s) - 3600) * 1000 ))
 
 # fetch context messages from the last 5 minutes
-python diaspora.py context --time-horizon $(( ($(date +%s) - 300) * 1000 ))
+python diaspora.py context --topic topic-parsl-local --time-horizon $(( ($(date +%s) - 300) * 1000 ))
 
 # recreate topic
-python diaspora.py clear --topic my-topic
+python diaspora.py clear --topic topic-parsl-local
 ```
