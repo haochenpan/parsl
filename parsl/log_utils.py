@@ -154,9 +154,7 @@ def set_diaspora_logger(topic_name: str = "topic-parsl-logs",
                         name: str = 'parsl',
                         level: int = logging.INFO,
                         format_string: Optional[str] = None,
-                        environment: Optional[str] = None,
-                        send_timeout: int = 30,
-                        producer: Optional[Any] = None) -> Callable[[], None]:
+                        send_timeout: int = 30) -> Callable[[], None]:
     """Add a Diaspora event-fabric logger.
 
     Args:
@@ -166,46 +164,39 @@ def set_diaspora_logger(topic_name: str = "topic-parsl-logs",
         - level (logging.LEVEL): Set the logging level. Defaults to INFO.
         - format_string (string): Optional custom formatted output added as
           event field ``formatted``.
-        - environment (string): Optional Diaspora SDK environment.
         - send_timeout (int): Ack timeout in seconds while waiting for queued sends on close.
-        - producer (object): Optional custom producer with a ``send`` method.
-          Primarily for tests; when omitted, a Diaspora KafkaProducer is created.
 
     Returns:
         - a callable which, when invoked, will reverse the log handler
           attachments made by this call.
     """
-    owns_producer = producer is None
-    if producer is None:
-        try:
-            from diaspora_event_sdk import Client as GlobusClient
-            from diaspora_event_sdk.sdk.kafka_client import KafkaProducer
-        except ImportError as e:
-            raise RuntimeError(
-                "diaspora-event-sdk with kafka-python support is required. "
-                "Install with: pip install -e '.[diaspora]'. "
-                "Then run: python examples/diaspora/diaspora.py setup"
-            ) from e
+    try:
+        from diaspora_event_sdk import Client as GlobusClient
+        from diaspora_event_sdk.sdk.kafka_client import KafkaProducer
+    except ImportError as e:
+        raise RuntimeError(
+            "diaspora-event-sdk with kafka-python support is required. "
+            "Install with: pip install -e '.[diaspora]'. "
+            "Then run: python examples/diaspora/diaspora.py setup"
+        ) from e
 
-        try:
-            client = GlobusClient(environment=environment)
-            client.create_key()
-            create_topic_name = topic_name.split(".", 1)[1] if "." in topic_name else topic_name
-            topic_result = client.create_topic(create_topic_name)
-            if isinstance(topic_result, dict):
-                status = topic_result.get("status")
-                if status not in {"success", "no-op", None}:
-                    raise RuntimeError(f"create_topic failed with status={status!r}")
+    try:
+        client = GlobusClient()
+        client.create_key()
+        create_topic_name = topic_name.split(".", 1)[1] if "." in topic_name else topic_name
+        topic_result = client.create_topic(create_topic_name)
+        if isinstance(topic_result, dict):
+            status = topic_result.get("status")
+            if status not in {"success", "no-op", None}:
+                raise RuntimeError(f"create_topic failed with status={status!r}")
 
-            kafka_topic = topic_name if "." in topic_name else f"{client.namespace}.{topic_name}"
-            producer = KafkaProducer(kafka_topic)
-        except Exception as e:
-            raise RuntimeError(
-                "Failed to initialize Diaspora logging producer. "
-                "Run: python examples/diaspora/diaspora.py setup"
-            ) from e
-    else:
-        kafka_topic = topic_name
+        kafka_topic = topic_name if "." in topic_name else f"{client.namespace}.{topic_name}"
+        producer = KafkaProducer(kafka_topic)
+    except Exception as e:
+        raise RuntimeError(
+            "Failed to initialize Diaspora logging producer. "
+            "Run: python examples/diaspora/diaspora.py setup"
+        ) from e
 
     if format_string is None:
         format_string = DEFAULT_FORMAT
@@ -225,7 +216,7 @@ def set_diaspora_logger(topic_name: str = "topic-parsl-logs",
         logger.removeHandler(handler)
         futures_logger.removeHandler(handler)
         handler.close()
-        if owns_producer and hasattr(producer, "close"):
+        if hasattr(producer, "close"):
             producer.close()
 
     return unregister_callback
